@@ -3,6 +3,7 @@
 Nothing connects at import time — call get_db()/connect() explicitly so the app
 (and the seed script) fail loudly and clearly when MONGODB_URI is missing.
 """
+import certifi
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from .config import settings
@@ -18,7 +19,11 @@ def get_client():
             raise RuntimeError(
                 "MONGODB_URI is not set. Add your Atlas connection string to .env."
             )
-        _client = AsyncIOMotorClient(settings.MONGODB_URI, serverSelectionTimeoutMS=8000)
+        _client = AsyncIOMotorClient(
+            settings.MONGODB_URI,
+            tlsCAFile=certifi.where(),  # Windows/Python often lacks a usable CA store for Atlas TLS
+            serverSelectionTimeoutMS=8000,
+        )
     return _client
 
 
