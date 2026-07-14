@@ -1,0 +1,7 @@
+category,typical_low_inr,typical_high_inr,platform_fee_pct,shipping_flat_inr,fragile,perishable,notes
+handloom_textiles,150,600,0,40,false,false,zero-commission marketplace; light weight
+food,80,400,0,50,false,true,perishable; regional fulfilment advised
+jewellery_precious,2000,50000,0,60,true,false,high value; insured shipping
+imitation_jewellery,100,800,0,40,false,false,fashion jewellery
+cosmetics_soap,60,500,0,45,false,false,weight-based shipping
+handicrafts_decor,120,1500,0,60,true,false,fragile; protective packing

@@ -1,0 +1,52 @@
+{
+  "_note": "Simplified prototype rules. Accurate at category level; verify exact legal text before production.",
+  "gst": {
+    "goods_threshold_inr": 4000000,
+    "special_states_threshold_inr": 2000000,
+    "note": "GST registration generally required only if annual turnover exceeds threshold. Most small/SHG sellers are below it and exempt. Some marketplaces still request a GSTIN except for notified exempt categories."
+  },
+  "categories": {
+    "handloom_textiles": {
+      "aliases": ["saree", "dupatta", "stole", "jute bag", "cotton bag", "handwoven", "fabric", "cloth", "kurta", "handloom"],
+      "required_labels": ["fabric_content", "care_instructions", "packer_name_and_address", "net_quantity"],
+      "required_licenses": [],
+      "optional_marks": ["Handloom Mark", "India Handmade"],
+      "notes": "Legal Metrology labeling applies to pre-packaged goods. No special license for basic sale."
+    },
+    "food": {
+      "aliases": ["pickle", "laddu", "masala", "spice", "snack", "edible", "homemade food", "papad", "chutney"],
+      "required_labels": ["FSSAI_number", "ingredients", "net_weight", "mfg_date", "best_before", "veg_nonveg_mark"],
+      "required_licenses": ["FSSAI_registration_or_license"],
+      "optional_marks": [],
+      "notes": "FSSAI registration mandatory for any food business; license tier depends on turnover. Perishable — prefer regional fulfilment."
+    },
+    "jewellery_precious": {
+      "aliases": ["gold", "silver", "precious", "hallmark jewellery"],
+      "required_labels": ["purity", "BIS_hallmark", "net_weight"],
+      "required_licenses": ["BIS_hallmark_registration"],
+      "optional_marks": [],
+      "notes": "BIS hallmarking mandatory for gold/silver articles."
+    },
+    "imitation_jewellery": {
+      "aliases": ["artificial jewellery", "beads", "imitation", "fashion jewellery", "earrings", "bangles"],
+      "required_labels": ["material", "net_quantity", "packer_name_and_address"],
+      "required_licenses": [],
+      "optional_marks": [],
+      "notes": "No hallmark required; standard pre-packaged labeling applies."
+    },
+    "cosmetics_soap": {
+      "aliases": ["soap", "cream", "lotion", "cosmetic", "handmade soap", "shampoo"],
+      "required_labels": ["ingredients", "net_weight", "mfg_date", "best_before", "manufacturer_details"],
+      "required_licenses": ["cosmetic_manufacturing_note"],
+      "optional_marks": [],
+      "notes": "Cosmetics regulated under CDSCO; small-scale makers may need manufacturing registration. Verify."
+    },
+    "handicrafts_decor": {
+      "aliases": ["pottery", "terracotta", "decor", "craft", "bamboo", "painting", "showpiece", "basket", "candle"],
+      "required_labels": ["material", "net_quantity", "packer_name_and_address"],
+      "required_licenses": [],
+      "optional_marks": ["GI tag (if applicable)"],
+      "notes": "Generally no special license; standard labeling applies. Often fragile — protective packing."
+    }
+  }
+}

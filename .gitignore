@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+trust_qr_*.png
+
+# runtime logs
+*.log
+
+# stray / scraped test images (keep only jute_bag.webp, the app's sample)
+81oE8o5j2HL._AC_UF1000,1000_QL80_.jpg
