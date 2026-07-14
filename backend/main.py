@@ -3,9 +3,11 @@
 Run from the repo root so the root-level `orchestrator` import resolves:
     uvicorn backend.main:app --reload
 """
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .db import ensure_indexes, ping
@@ -29,6 +31,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Aarambhini API", version="0.1.0", lifespan=lifespan)
+
+# Dev: allow the Next.js app on any localhost port. In production, set
+# CORS_ORIGINS to an explicit comma-separated list of your real origins.
+_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origins or [],
+    allow_origin_regex=None if _origins else r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(sellers.router)
 app.include_router(listings.router)

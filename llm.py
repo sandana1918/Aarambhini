@@ -7,10 +7,12 @@ import os
 import re
 import json
 import time
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Explicit path so the agents work no matter what the working directory is.
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 _API_KEY = os.getenv("GEMINI_API_KEY")
 _MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-flash-latest")

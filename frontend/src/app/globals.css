@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme {
+  /* Brand — Meesho-inspired magenta, branded as Aarambhini */
+  --color-brand-50: #fef1f7;
+  --color-brand-100: #fde7f1;
+  --color-brand-200: #fbcfe3;
+  --color-brand-400: #f870b4;
+  --color-brand: #f43397;
+  --color-brand-600: #e01d84;
+  --color-brand-700: #b81569;
+
+  /* Warm secondary for accents / trust */
+  --color-saffron: #f59e0b;
+  --color-saffron-100: #fef3c7;
+
+  /* Neutrals */
+  --color-ink: #17161a;
+  --color-ink-2: #43414d;
+  --color-muted: #7c7a87;
+  --color-line: #e9e7ee;
+  --color-surface: #ffffff;
+  --color-canvas: #f7f6f9;
+
+  /* Semantic */
+  --color-ok: #16a34a;
+  --color-ok-bg: #ecfdf3;
+  --color-warn: #b45309;
+  --color-warn-bg: #fffbeb;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fef2f2;
+
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+@utility card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 1rem;
+  box-shadow: 0 1px 2px rgb(23 22 26 / 0.04), 0 8px 24px rgb(23 22 26 / 0.04);
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-rise { animation: rise 0.35s ease-out both; }
+
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgb(244 51 151 / 0.35); }
+  70%  { box-shadow: 0 0 0 10px rgb(244 51 151 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(244 51 151 / 0); }
+}
+.animate-pulse-ring { animation: pulse-ring 1.6s infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

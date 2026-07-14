@@ -3,14 +3,17 @@
 The heavy lifting is the existing LangGraph orchestrator at repo root; this
 router persists its output and enforces approval-before-publish + an audit trail.
 """
+import io
 import asyncio
 from datetime import datetime, timezone
+from typing import Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException
+from PIL import Image
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 
 from ..db import get_db, LISTINGS, AUDIT_LOG
-from ..models import ListingRunRequest, ApprovalDecision
+from ..models import ApprovalDecision
 
 router = APIRouter(prefix="/listings", tags=["listings"])
 
@@ -23,18 +26,33 @@ def _out(doc: dict) -> dict:
 
 
 @router.post("/run")
-async def run_listing(payload: ListingRunRequest):
-    """Run the crew (text-first; image upload is a separate endpoint later)."""
+async def run_listing(
+    voice_text: str = Form(...),
+    desired_margin_pct: int = Form(20),
+    seller_id: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None),
+):
+    """Run the agent crew on a voice note + one product photo (multipart)."""
     import orchestrator  # repo-root module; imported lazily so backend stays importable
 
+    image = None
+    if photo is not None:
+        raw = await photo.read()
+        if raw:
+            try:
+                image = Image.open(io.BytesIO(raw))
+                image.load()
+            except Exception:
+                raise HTTPException(status_code=400, detail="Could not read that image file.")
+
     result = await asyncio.to_thread(
-        orchestrator.run, payload.voice_text, None, payload.desired_margin_pct
+        orchestrator.run, voice_text, image, desired_margin_pct
     )
 
     db = get_db()
     now = datetime.now(timezone.utc)
     doc = {
-        "seller_id": ObjectId(payload.seller_id) if payload.seller_id else None,
+        "seller_id": ObjectId(seller_id) if seller_id else None,
         "status": result.get("status"),
         "suno": result.get("suno"),
         "listing": result.get("listing"),
@@ -44,7 +62,7 @@ async def run_listing(payload: ListingRunRequest):
         "packaging_plan": result.get("packaging_plan"),
         "action_checklist": result.get("action_checklist", []),
         "approvals": result.get("approvals", []),
-        "activity_log": [name for name, _ in result.get("log", [])],
+        "activity_log": [{"agent": name, "output": out} for name, out in result.get("log", [])],
         "reason": result.get("reason"),
         "version": 1,
         "created_at": now,

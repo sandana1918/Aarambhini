@@ -1,9 +1,11 @@
 """Settings, loaded from environment / .env — no secrets hardcoded."""
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load the repo-root .env explicitly so the app works from any working directory.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 class Settings:
