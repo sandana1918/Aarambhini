@@ -1,0 +1,7 @@
+# Backend-only deps (in addition to the root requirements.txt used by the agents)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+motor>=3.4
+pydantic>=2.6
+python-multipart>=0.0.9
+langgraph-checkpoint-mongodb>=0.1.0

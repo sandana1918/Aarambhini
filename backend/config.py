@@ -1,0 +1,19 @@
+"""Settings, loaded from environment / .env — no secrets hardcoded."""
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+class Settings:
+    MONGODB_URI: str = os.getenv("MONGODB_URI", "")
+    DB_NAME: str = os.getenv("DB_NAME", "aarambhini")
+    APP_ENV: str = os.getenv("APP_ENV", "dev")
+
+    @property
+    def has_db(self) -> bool:
+        return bool(self.MONGODB_URI)
+
+
+settings = Settings()
