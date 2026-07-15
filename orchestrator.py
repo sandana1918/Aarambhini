@@ -479,6 +479,40 @@ def resume(thread_id, value) -> dict:
     return _annotate(dict(final), thread_id)
 
 
+def stream_run(voice_text, image_ref=None, desired_margin_pct=20, thread_id=None):
+    """Yield per-node updates as the crew runs, for live streaming to the UI.
+
+    Each item is a dict {node_name: state_delta} (LangGraph stream_mode=updates).
+    The stream ends when the run pauses at an interrupt (clarify / approval) or
+    finishes; call final_state(thread_id) afterwards for the full state to persist.
+    """
+    tid = thread_id or str(uuid.uuid4())
+    yield from _GRAPH.stream(
+        {
+            "voice_text": voice_text,
+            "image_ref": image_ref,
+            "desired_margin_pct": desired_margin_pct,
+            "tries": 0,
+            "quality_tries": 0,
+            "log": [],
+        },
+        config={"configurable": {"thread_id": tid}},
+        stream_mode="updates",
+    )
+
+
+def final_state(thread_id) -> dict:
+    """The full state after a (possibly paused) streamed run, annotated like run()."""
+    config = {"configurable": {"thread_id": thread_id}}
+    snap = _GRAPH.get_state(config)
+    out = dict(snap.values)
+    out["thread_id"] = thread_id
+    if snap.next == ("clarify",):
+        out["status"] = "needs_clarification"
+        out["clarification"] = {"kind": "clarification", "questions": _blocking_gaps(snap.values)}
+    return out
+
+
 if __name__ == "__main__":
     import json
 

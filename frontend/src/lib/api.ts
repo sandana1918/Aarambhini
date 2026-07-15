@@ -58,6 +58,43 @@ export async function clarifyListing(
   return json<RunResult>(res);
 }
 
+export async function runListingStream(
+  input: { voiceText: string; marginPct: number; photo?: File | null },
+  onStep: (agent: string) => void,
+): Promise<RunResult> {
+  const fd = new FormData();
+  fd.append('voice_text', input.voiceText);
+  fd.append('desired_margin_pct', String(input.marginPct));
+  if (input.photo) fd.append('photo', input.photo);
+
+  const res = await fetch(`${API_BASE}/listings/run/stream`, { method: 'POST', body: fd });
+  if (!res.ok || !res.body) throw new Error(`${res.status} ${res.statusText}`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: RunResult | null = null;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split('\n\n');
+    buffer = frames.pop() ?? ''; // keep the incomplete tail
+    for (const frame of frames) {
+      const ev = frame.match(/^event: (.+)$/m)?.[1]?.trim();
+      const dataLine = frame.match(/^data: (.+)$/m)?.[1];
+      if (!ev || !dataLine) continue;
+      const data = JSON.parse(dataLine);
+      if (ev === 'step') onStep(data.agent);
+      else if (ev === 'done') result = data as RunResult;
+      else if (ev === 'error') throw new Error(data.detail || 'Streaming failed.');
+    }
+  }
+  if (!result) throw new Error('The run ended without a result.');
+  return result;
+}
+
 export async function approveListing(
   id: string,
   approved: boolean,

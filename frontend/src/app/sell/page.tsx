@@ -6,7 +6,7 @@ import { Header } from '@/components/Chrome';
 import { AgentTimeline } from '@/components/AgentTimeline';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { ProductDetails } from '@/components/ProductDetails';
-import { runListing, approveListing, clarifyListing } from '@/lib/api';
+import { runListingStream, approveListing, clarifyListing } from '@/lib/api';
 import type { RunResult } from '@/lib/types';
 
 const HINDI_EXAMPLE = 'मैं हाथ से बने जूट बैग बनाती हूँ, 40 पीस, ₹200 लागत।';
@@ -32,6 +32,7 @@ export default function SellPage() {
   const [approving, setApproving] = useState(false);
   const [clarifyValue, setClarifyValue] = useState('');
   const [clarifying, setClarifying] = useState(false);
+  const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function pickPhoto(f: File | null) {
@@ -47,8 +48,11 @@ export default function SellPage() {
     setRejected(false);
     setNotes('');
     setEditPrice('');
+    setLiveSteps([]);
     try {
-      const r = await runListing({ voiceText, marginPct: margin, photo });
+      const r = await runListingStream({ voiceText, marginPct: margin, photo }, (agent) =>
+        setLiveSteps((prev) => [...prev, agent]),
+      );
       setResult(r);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong.');
@@ -245,11 +249,30 @@ export default function SellPage() {
             )}
 
             {loading && (
-              <div className="card grid place-items-center px-6 py-20 text-center">
-                <span className="h-9 w-9 animate-spin rounded-full border-[3px] border-brand-100 border-t-brand" />
-                <p className="mt-5 text-[15px] font-semibold text-ink">The crew is working…</p>
-                <p className="mt-1.5 text-[13px] text-muted">
-                  Suno is listening, Niyam is checking the law.
+              <div className="card px-6 py-10">
+                <div className="flex items-center gap-3">
+                  <span className="h-6 w-6 animate-spin rounded-full border-[3px] border-brand-100 border-t-brand" />
+                  <p className="text-[15px] font-semibold text-ink">
+                    {liveSteps.length ? `${liveSteps[liveSteps.length - 1]} just finished…` : 'The crew is starting…'}
+                  </p>
+                </div>
+                {liveSteps.length > 0 && (
+                  <ol className="mt-5 space-y-1.5">
+                    {liveSteps.map((agent, i) => (
+                      <li
+                        key={i}
+                        className="animate-rise flex items-center gap-2.5 text-[13px] text-ink-2"
+                      >
+                        <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ok-bg text-[10px] text-ok">
+                          ✓
+                        </span>
+                        {agent}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                <p className="mt-4 text-[11px] text-muted">
+                  Live — each agent appears the moment it finishes.
                 </p>
               </div>
             )}

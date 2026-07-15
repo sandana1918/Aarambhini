@@ -4,14 +4,17 @@ The heavy lifting is the existing LangGraph orchestrator at repo root; this
 router persists its output and enforces approval-before-publish + an audit trail.
 """
 import io
+import json
 import uuid
 import asyncio
+import threading
 from datetime import datetime, timezone
 from typing import Optional
 
 from bson import ObjectId
 from PIL import Image
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 
 from ..db import get_db, LISTINGS, AUDIT_LOG
 from ..models import ApprovalDecision, ClarificationAnswers
@@ -93,6 +96,96 @@ async def run_listing(
     res = await db[LISTINGS].insert_one(doc)
     doc["_id"] = res.inserted_id
     return _out(doc)
+
+
+async def _save_photo(photo: Optional[UploadFile]) -> Optional[str]:
+    import graph_store
+
+    if photo is None:
+        return None
+    raw = await photo.read()
+    if not raw:
+        return None
+    try:
+        Image.open(io.BytesIO(raw)).verify()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not read that image file.")
+    return await asyncio.to_thread(graph_store.save_image, raw, photo.filename or "photo")
+
+
+@router.post("/run/stream")
+async def run_listing_stream(
+    voice_text: str = Form(...),
+    desired_margin_pct: int = Form(20),
+    seller_id: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None),
+):
+    """Same as /run, but streams each agent's completion live over SSE.
+
+    The crew runs in a worker thread; node updates are pushed to an async queue
+    and emitted as `step` events. When the run pauses (clarify/approval) or ends,
+    the listing is persisted and a final `done` event carries the full document.
+    """
+    import orchestrator
+
+    image_ref = await _save_photo(photo)
+    run_id = str(uuid.uuid4())
+    db = get_db()
+    loop = asyncio.get_running_loop()
+
+    def sse(event: str, data) -> str:
+        return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+    async def event_gen():
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def worker():
+            try:
+                for chunk in orchestrator.stream_run(
+                    voice_text, image_ref, desired_margin_pct, run_id
+                ):
+                    loop.call_soon_threadsafe(queue.put_nowait, ("update", chunk))
+            except Exception as exc:  # noqa: BLE001 - surface to the client
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", str(exc)))
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, ("__end__", None))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+        while True:
+            kind, payload = await queue.get()
+            if kind == "__end__":
+                break
+            if kind == "error":
+                yield sse("error", {"detail": payload})
+                return
+            for node, delta in payload.items():
+                if node == "__interrupt__" or not isinstance(delta, dict):
+                    continue
+                for name, _output in (delta.get("log") or []):
+                    yield sse("step", {"agent": name})
+
+        # Run paused or finished — persist the listing and emit the final document.
+        result = await asyncio.to_thread(orchestrator.final_state, run_id)
+        now = datetime.now(timezone.utc)
+        doc = {
+            "seller_id": ObjectId(seller_id) if seller_id else None,
+            "thread_id": run_id,
+            "image_ref": image_ref,
+            **_listing_fields(result),
+            "version": 1,
+            "created_at": now,
+            "updated_at": now,
+        }
+        res = await db[LISTINGS].insert_one(doc)
+        doc["_id"] = res.inserted_id
+        yield sse("done", _out(doc))
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/{listing_id}/clarify")
