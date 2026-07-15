@@ -10,3 +10,6 @@ trust_qr_*.png
 
 # stray / scraped test images (keep only jute_bag.webp, the app's sample)
 81oE8o5j2HL._AC_UF1000,1000_QL80_.jpg
+
+# Local IDE config
+.vscode/

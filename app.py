@@ -71,20 +71,24 @@ with col_in:
     use_sample = st.checkbox("Use sample jute-bag photo", value=True)
     uploaded = st.file_uploader("Upload one product photo", type=["png", "jpg", "jpeg", "webp"])
 
-    image = None
+    image_bytes = None
     if use_sample:
-        image = Image.open(os.path.join(os.path.dirname(__file__), "jute_bag.webp"))
-        st.image(image, caption="Sample product photo", use_container_width=True)
+        with open(os.path.join(os.path.dirname(__file__), "jute_bag.webp"), "rb") as f:
+            image_bytes = f.read()
+        st.image(image_bytes, caption="Sample product photo", use_container_width=True)
     elif uploaded is not None:
-        image = Image.open(io.BytesIO(uploaded.read()))
-        st.image(image, caption="Your photo", use_container_width=True)
+        image_bytes = uploaded.read()
+        st.image(image_bytes, caption="Your photo", use_container_width=True)
 
     if st.button("Run Aarambhini", type="primary", use_container_width=True):
         st.session_state.published = False
         with st.spinner("The crew is working…"):
             try:
+                import graph_store
+
+                image_ref = graph_store.save_image(image_bytes) if image_bytes else None
                 st.session_state.result = orchestrator.run(
-                    voice_text, image=image, desired_margin_pct=margin
+                    voice_text, image_ref=image_ref, desired_margin_pct=margin
                 )
             except Exception as e:  # noqa: BLE001
                 st.session_state.result = {"status": "error", "error": str(e)}

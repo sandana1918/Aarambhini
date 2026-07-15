@@ -4,6 +4,7 @@ The heavy lifting is the existing LangGraph orchestrator at repo root; this
 router persists its output and enforces approval-before-publish + an audit trail.
 """
 import io
+import uuid
 import asyncio
 from datetime import datetime, timezone
 from typing import Optional
@@ -34,25 +35,35 @@ async def run_listing(
 ):
     """Run the agent crew on a voice note + one product photo (multipart)."""
     import orchestrator  # repo-root module; imported lazily so backend stays importable
+    import graph_store
 
-    image = None
+    # Validate the image, then store the bytes in GridFS — only a string ref
+    # travels through the (checkpointed) graph.
+    image_ref = None
     if photo is not None:
         raw = await photo.read()
         if raw:
             try:
-                image = Image.open(io.BytesIO(raw))
-                image.load()
+                Image.open(io.BytesIO(raw)).verify()
             except Exception:
                 raise HTTPException(status_code=400, detail="Could not read that image file.")
+            image_ref = await asyncio.to_thread(
+                graph_store.save_image, raw, photo.filename or "photo"
+            )
 
+    # A stable run id keys the checkpoint (so the run is resumable) and links the
+    # listing to its graph thread.
+    run_id = str(uuid.uuid4())
     result = await asyncio.to_thread(
-        orchestrator.run, voice_text, image, desired_margin_pct
+        orchestrator.run, voice_text, image_ref, desired_margin_pct, run_id
     )
 
     db = get_db()
     now = datetime.now(timezone.utc)
     doc = {
         "seller_id": ObjectId(seller_id) if seller_id else None,
+        "thread_id": run_id,
+        "image_ref": image_ref,
         "status": result.get("status"),
         "suno": result.get("suno"),
         "product_attributes": result.get("product_attributes"),

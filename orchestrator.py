@@ -15,10 +15,12 @@ Two reject gates (photo quality / image authenticity, both in Suno) stop bad
 input early; one interrupt (Finalize) holds everything for the seller.
 """
 import operator
-from typing import Annotated, Any, TypedDict
+import uuid
+from typing import Annotated, TypedDict
 
 from langgraph.graph import StateGraph, START, END
 
+import graph_store
 from agents import suno as suno_agent
 from agents import likho as likho_agent
 from agents import daam as daam_agent
@@ -32,7 +34,7 @@ MAX_QUALITY_TRIES = 2
 
 class AarambhiniState(TypedDict, total=False):
     voice_text: str
-    image: Any
+    image_ref: str  # GridFS id — NOT a live PIL.Image (which can't be checkpointed)
     desired_margin_pct: int
     # agent outputs
     suno: dict
@@ -87,7 +89,8 @@ def _size_guide_text(state) -> str:
 
 # ------------------------------------------------------------------ nodes
 def suno_node(state) -> dict:
-    s = suno_agent.run(state["voice_text"], state.get("image"))
+    image = graph_store.load_image(state.get("image_ref"))
+    s = suno_agent.run(state["voice_text"], image)
     # Attributes are produced by the same call; lift them to top-level state,
     # keep state["suno"] to the intake facts downstream agents read.
     pa = s.pop("product_attributes", {}) or {}
@@ -320,23 +323,36 @@ def build_graph():
                             {"mitigate": "likho", "done": "finalize"})
 
     g.add_edge("finalize", END)
-    return g.compile()
+    # Durable checkpointing: every node's state is persisted to MongoDB, so a run
+    # can pause (human interrupt), resume, or recover from a failure by thread_id.
+    return g.compile(checkpointer=graph_store.checkpointer())
 
 
 _GRAPH = build_graph()
 
 
-def run(voice_text, image=None, desired_margin_pct=20) -> dict:
-    """Same interface as before — app.py is unchanged. Returns the final state dict."""
-    final = _GRAPH.invoke({
-        "voice_text": voice_text,
-        "image": image,
-        "desired_margin_pct": desired_margin_pct,
-        "tries": 0,
-        "quality_tries": 0,
-        "log": [],
-    })
-    return dict(final)
+def run(voice_text, image_ref=None, desired_margin_pct=20, thread_id=None) -> dict:
+    """Run the crew. image_ref is a GridFS id (or None); the graph loads the photo
+    from it so no live PIL.Image ever enters checkpointed state.
+
+    thread_id keys the checkpoint; pass the listing/run id to make the run
+    resumable. Returns the final state dict.
+    """
+    tid = thread_id or str(uuid.uuid4())
+    final = _GRAPH.invoke(
+        {
+            "voice_text": voice_text,
+            "image_ref": image_ref,
+            "desired_margin_pct": desired_margin_pct,
+            "tries": 0,
+            "quality_tries": 0,
+            "log": [],
+        },
+        config={"configurable": {"thread_id": tid}},
+    )
+    out = dict(final)
+    out["thread_id"] = tid
+    return out
 
 
 if __name__ == "__main__":
