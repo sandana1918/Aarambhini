@@ -6,6 +6,7 @@ import { Header } from '@/components/Chrome';
 import { AgentTimeline } from '@/components/AgentTimeline';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { ProductDetails } from '@/components/ProductDetails';
+import { Icon } from '@/components/icons';
 import { runListingStream, approveListing, clarifyListing } from '@/lib/api';
 import type { RunResult } from '@/lib/types';
 
@@ -187,8 +188,8 @@ export default function SellPage() {
                   className="h-14 w-14 shrink-0 rounded-lg object-cover"
                 />
               ) : (
-                <span className="grid h-14 w-14 shrink-0 place-items-center rounded-lg bg-brand-50 text-xl">
-                  📷
+                <span className="grid h-14 w-14 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand">
+                  <Icon name="camera" size={22} />
                 </span>
               )}
               <span className="min-w-0">
@@ -236,7 +237,9 @@ export default function SellPage() {
           <div className="min-w-0 space-y-6">
             {!result && !loading && (
               <div className="card grid place-items-center px-6 py-20 text-center">
-                <span className="text-4xl">🪡</span>
+                <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-50 text-brand">
+                  <Icon name="sparkles" size={26} />
+                </span>
                 <p className="mt-4 text-[15px] font-semibold text-ink">
                   Your agent crew is standing by
                 </p>
@@ -263,8 +266,8 @@ export default function SellPage() {
                         key={i}
                         className="animate-rise flex items-center gap-2.5 text-[13px] text-ink-2"
                       >
-                        <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ok-bg text-[10px] text-ok">
-                          ✓
+                        <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ok-bg text-ok">
+                          <Icon name="check" size={11} />
                         </span>
                         {agent}
                       </li>
@@ -281,8 +284,8 @@ export default function SellPage() {
             {retake && (
               <div className="card border-saffron/40 p-6">
                 <div className="flex items-start gap-3">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-warn-bg text-xl">
-                    📷
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-warn-bg text-warn">
+                    <Icon name="camera" size={20} />
                   </span>
                   <div>
                     <p className="text-[15px] font-bold text-ink">Suno stopped the pipeline</p>
@@ -301,8 +304,8 @@ export default function SellPage() {
             {needsClarification && result && (
               <div className="card border-brand-200 p-6">
                 <div className="flex items-start gap-3">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-xl">
-                    🤔
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand">
+                    <Icon name="help" size={20} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-[15px] font-bold text-ink">One quick thing</p>
@@ -396,8 +399,9 @@ export default function SellPage() {
                       {result.listing?.description}
                     </p>
                     {result.listing?.maker_story && (
-                      <p className="mt-4 rounded-xl bg-brand-50 px-4 py-3 text-[13px] italic leading-relaxed text-brand-700">
-                        👩‍🌾 {result.listing.maker_story}
+                      <p className="mt-4 flex gap-2.5 rounded-xl bg-brand-50 px-4 py-3 text-[13px] italic leading-relaxed text-brand-700">
+                        <Icon name="sprout" size={16} className="mt-0.5 shrink-0" />
+                        <span>{result.listing.maker_story}</span>
                       </p>
                     )}
                     <div className="mt-4 flex flex-wrap gap-1.5">
@@ -422,18 +426,19 @@ export default function SellPage() {
                 {/* Compliance / Returns / Packaging */}
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div className="card p-5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">⚖️</span>
+                    <div className="flex items-center gap-2 text-brand">
+                      <Icon name="scale" size={18} />
                       <p className="text-[13px] font-bold text-ink">Compliance</p>
                     </div>
                     <p
-                      className={`mt-3 inline-block rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                      className={`mt-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${
                         result.compliance?.compliance_ok
                           ? 'bg-ok-bg text-ok'
                           : 'bg-warn-bg text-warn'
                       }`}
                     >
-                      {result.compliance?.compliance_ok ? '✓ Labels applied' : '⚠ Action needed'}
+                      <Icon name={result.compliance?.compliance_ok ? 'check' : 'alert'} size={12} />
+                      {result.compliance?.compliance_ok ? 'Labels applied' : 'Action needed'}
                     </p>
                     {!!result.compliance?.required_licenses?.length && (
                       <p className="mt-3 rounded-lg bg-warn-bg px-2.5 py-2 text-[11px] font-medium text-warn">
@@ -446,8 +451,8 @@ export default function SellPage() {
                   </div>
 
                   <div className="card p-5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">🔄</span>
+                    <div className="flex items-center gap-2 text-brand">
+                      <Icon name="refresh" size={18} />
                       <p className="text-[13px] font-bold text-ink">Returns</p>
                     </div>
                     <p
@@ -461,8 +466,8 @@ export default function SellPage() {
                   </div>
 
                   <div className="card p-5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">📦</span>
+                    <div className="flex items-center gap-2 text-brand">
+                      <Icon name="package" size={18} />
                       <p className="text-[13px] font-bold text-ink">Packaging</p>
                     </div>
                     <p className="mt-3 text-[12px] leading-relaxed text-ink-2">
@@ -518,7 +523,9 @@ export default function SellPage() {
                 >
                   {published ? (
                     <div className="text-center">
-                      <span className="text-3xl">🎉</span>
+                      <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-ok-bg text-ok">
+                        <Icon name="success" size={26} />
+                      </span>
                       <p className="mt-3 text-[16px] font-bold text-ink">Published!</p>
                       <p className="mt-1.5 text-[13px] text-ink-2">
                         Your listing is live at ₹{result.price?.selling_price_inr}.
@@ -536,7 +543,9 @@ export default function SellPage() {
                     </div>
                   ) : rejected ? (
                     <div className="text-center">
-                      <span className="text-3xl">✋</span>
+                      <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-canvas text-muted">
+                        <Icon name="ban" size={24} />
+                      </span>
                       <p className="mt-3 text-[16px] font-bold text-ink">Not published</p>
                       <p className="mt-1.5 text-[13px] text-ink-2">
                         You rejected this listing. Nothing went live.

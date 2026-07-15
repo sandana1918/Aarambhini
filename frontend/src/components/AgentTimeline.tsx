@@ -2,20 +2,22 @@
 
 import { useState } from 'react';
 import { loopKind, type AgentLogEntry } from '@/lib/types';
+import { Icon, type IconName } from './icons';
 
-const AGENT_EMOJI: Record<string, string> = {
-  Suno: '👂',
-  Likho: '✍️',
-  Daam: '💰',
-  Niyam: '⚖️',
-  Wapsi: '🔄',
-  Mukhiya: '🧭',
-  Packaging: '📦',
+const AGENT_ICON: Record<string, IconName> = {
+  Suno: 'ear',
+  Likho: 'pen',
+  Daam: 'rupee',
+  Niyam: 'scale',
+  Wapsi: 'refresh',
+  Mukhiya: 'compass',
+  Packaging: 'package',
+  Seller: 'check',
 };
 
-function emojiFor(agent: string) {
+function iconFor(agent: string): IconName {
   const base = agent.split(' ')[0];
-  return AGENT_EMOJI[base] ?? '🤖';
+  return AGENT_ICON[base] ?? 'bot';
 }
 
 const LOOP_STYLE = {
@@ -41,11 +43,11 @@ export function AgentTimeline({ log }: { log: AgentLogEntry[] }) {
         return (
           <li key={i} className="relative animate-rise" style={{ animationDelay: `${i * 45}ms` }}>
             <span
-              className={`absolute -left-7 top-2.5 grid h-6 w-6 place-items-center rounded-full border-2 bg-surface text-[11px] ${
+              className={`absolute -left-7 top-2.5 grid h-6 w-6 place-items-center rounded-full border-2 bg-surface text-ink-2 ${
                 style ? style.ring : 'border-line'
               }`}
             >
-              {emojiFor(entry.agent)}
+              <Icon name={iconFor(entry.agent)} size={12} />
             </span>
 
             <button

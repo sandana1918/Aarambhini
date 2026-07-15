@@ -1,13 +1,14 @@
 import Link from 'next/link';
 import { Header, Footer } from '@/components/Chrome';
+import { Icon, type IconName } from '@/components/icons';
 
-const CREW = [
-  { name: 'Mukhiya', role: 'The Manager', desc: 'Plans the work, arbitrates the loops, and holds the approval gate.', emoji: '🧭' },
-  { name: 'Suno', role: 'The Ear', desc: 'Hears your voice note in your language and reads your photo — rejecting blurry or copied shots.', emoji: '👂' },
-  { name: 'Likho', role: 'The Pen', desc: 'Writes the title, description, keywords and your maker story.', emoji: '✍️' },
-  { name: 'Daam', role: 'The Pricer', desc: 'Sets a fair price with a margin, and a discount floor you should never go below.', emoji: '💰' },
-  { name: 'Niyam', role: 'The Rulekeeper', desc: 'Checks GST, labels and licences — and blocks the listing until they are right.', emoji: '⚖️' },
-  { name: 'Wapsi', role: 'The Returns Guard', desc: 'Predicts why a buyer would return it, and fixes the listing before that happens.', emoji: '🔄' },
+const CREW: { name: string; role: string; desc: string; icon: IconName }[] = [
+  { name: 'Mukhiya', role: 'The Manager', desc: 'Plans the work, arbitrates the loops, and holds the approval gate.', icon: 'compass' },
+  { name: 'Suno', role: 'The Ear', desc: 'Hears your voice note in your language and reads your photo — rejecting blurry or copied shots.', icon: 'ear' },
+  { name: 'Likho', role: 'The Pen', desc: 'Writes the title, description, keywords and your maker story.', icon: 'pen' },
+  { name: 'Daam', role: 'The Pricer', desc: 'Sets a fair price with a margin, and a discount floor you should never go below.', icon: 'rupee' },
+  { name: 'Niyam', role: 'The Rulekeeper', desc: 'Checks GST, labels and licences — and blocks the listing until they are right.', icon: 'scale' },
+  { name: 'Wapsi', role: 'The Returns Guard', desc: 'Predicts why a buyer would return it, and fixes the listing before that happens.', icon: 'refresh' },
 ];
 
 const LOOPS = [
@@ -138,16 +139,16 @@ export default function Home() {
                         </div>
                       </div>
                     </div>
-                    {[
-                      ['⚖️', 'Fabric + care label added'],
-                      ['🔄', 'Size guide added — returns ↓'],
-                      ['📦', 'Poly bag → courier mailer'],
-                    ].map(([e, t]) => (
+                    {([
+                      ['scale', 'Fabric + care label added'],
+                      ['refresh', 'Size guide added — fewer returns'],
+                      ['package', 'Poly bag → courier mailer'],
+                    ] as [IconName, string][]).map(([icon, t]) => (
                       <div
                         key={t}
                         className="flex items-center gap-2 rounded-lg bg-ok-bg px-2.5 py-2 text-[11px] font-medium"
                       >
-                        <span>{e}</span>
+                        <Icon name={icon} size={14} className="shrink-0 text-ok" />
                         <span className="text-ink-2">{t}</span>
                       </div>
                     ))}
@@ -177,15 +178,17 @@ export default function Home() {
               can&apos;t cross alone.
             </p>
             <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-              {[
-                ['📝', 'Cataloging', 'Can’t write English titles or pick a category'],
-                ['💰', 'Pricing', 'No idea what price sells — or protects her margin'],
-                ['⚖️', 'Compliance', 'GST, FSSAI, labels feel like an impossible wall'],
-                ['📷', 'Photography', 'Phone photos get rejected as “not marketplace-ready”'],
-                ['🔄', 'Returns', 'One wrong-fit return wipes out a week’s profit'],
-              ].map(([e, t, d]) => (
+              {([
+                ['catalog', 'Cataloging', 'Can’t write English titles or pick a category'],
+                ['rupee', 'Pricing', 'No idea what price sells — or protects her margin'],
+                ['scale', 'Compliance', 'GST, FSSAI, labels feel like an impossible wall'],
+                ['camera', 'Photography', 'Phone photos get rejected as “not marketplace-ready”'],
+                ['refresh', 'Returns', 'One wrong-fit return wipes out a week’s profit'],
+              ] as [IconName, string, string][]).map(([icon, t, d]) => (
                 <div key={t} className="card p-5">
-                  <span className="text-2xl">{e}</span>
+                  <span className="grid h-11 w-11 place-items-center rounded-xl bg-brand-50 text-brand">
+                    <Icon name={icon} size={22} />
+                  </span>
                   <p className="mt-3 text-sm font-bold text-ink">{t}</p>
                   <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{d}</p>
                 </div>
@@ -275,8 +278,8 @@ export default function Home() {
                   className="group rounded-2xl border border-line p-6 transition hover:border-brand-200 hover:bg-brand-50/40"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="grid h-11 w-11 place-items-center rounded-xl bg-brand-50 text-xl transition group-hover:bg-white">
-                      {a.emoji}
+                    <span className="grid h-11 w-11 place-items-center rounded-xl bg-brand-50 text-brand transition group-hover:bg-white">
+                      <Icon name={a.icon} size={22} />
                     </span>
                     <div>
                       <p className="text-[15px] font-bold text-ink">{a.name}</p>

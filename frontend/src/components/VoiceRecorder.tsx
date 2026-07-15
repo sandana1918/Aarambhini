@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { startRecording, type RecorderHandle } from '@/lib/recorder';
 import { transcribeAudio } from '@/lib/api';
+import { Icon } from './icons';
 
 type Phase = 'idle' | 'recording' | 'transcribing' | 'review';
 
@@ -109,9 +110,9 @@ export function VoiceRecorder({
             <button
               type="button"
               onClick={() => setPhase('idle')}
-              className="flex-1 rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-brand-600"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-brand-600"
             >
-              ✓ Sounds right
+              <Icon name="check" size={15} /> Sounds right
             </button>
             <button
               type="button"
