@@ -155,12 +155,14 @@ flowchart TD
 | 2 | **Compliance** (red) | `niyam → likho → daam → niyam` | Niyam demands a required on-pack label | Likho appends exact label text **verbatim**; Daam re-prices to absorb `label_overhead_inr` so margin survives | `MAX_COMPLIANCE_TRIES = 3` |
 | 3 | **Returns** (amber) | `return_review → likho → finalize` | Wapsi flags `risk_level: high` or `needs_seller_confirmation` | Likho weaves in a size/colour guide; listing held for seller confirm | one-shot (`return_mitigated` flag) |
 
-**Suno's photo gate** stops unusable photos before any downstream work. **Two
-human interrupts** pause the graph (state checkpointed to Mongo): `clarify` asks
-only for a blocking gap such as a missing price (resumed via `/clarify`), and
-`approval` holds the finished listing for the seller (resumed via `/approve`).
-(Image *authenticity* — pHash duplicate/stock-photo detection — is scaffolded in
-`image_fingerprints` but not yet built.)
+**Suno's photo gate** stops unusable *and* inauthentic photos before any
+downstream work: a perceptual **pHash** fingerprints every upload against
+`image_fingerprints`, and a same-image-different-seller match hard-blocks it as a
+stolen photo; Gemini's vision read adds softer *review* flags (watermark /
+stock / AI-looking) that surface but never auto-reject. **Two human interrupts**
+then pause the graph (state checkpointed to Mongo): `clarify` asks only for a
+blocking gap such as a missing price (resumed via `/clarify`), and `approval`
+holds the finished listing for the seller (resumed via `/approve`).
 
 ---
 

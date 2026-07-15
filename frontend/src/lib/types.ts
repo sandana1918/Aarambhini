@@ -67,6 +67,13 @@ export type ProductAttributes = Record<string, string | number | string[] | null
 export type ClarificationQuestion = { field: string; type: string; prompt: string };
 export type Clarification = { kind: string; questions: ClarificationQuestion[] };
 
+export type Authenticity = {
+  verdict: 'ok' | 'review' | 'blocked' | string;
+  flags?: string[];
+  photo_authenticity?: string;
+  note?: string | null;
+};
+
 export type RunResult = {
   id: string;
   status:
@@ -78,6 +85,7 @@ export type RunResult = {
     | string;
   reason?: string | null;
   clarification?: Clarification | null;
+  authenticity?: Authenticity | null;
   suno?: Suno;
   product_attributes?: ProductAttributes | null;
   missing_attributes?: string[];

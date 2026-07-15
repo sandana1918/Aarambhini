@@ -29,6 +29,14 @@ def _out(doc: dict) -> dict:
     return doc
 
 
+def _oid_or_none(value):
+    """ObjectId if it's a valid one, else None — never 500 on a bad seller_id."""
+    try:
+        return ObjectId(value) if value else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _listing_fields(result: dict) -> dict:
     """The listing document fields derived from a (possibly paused) graph result."""
     return {
@@ -36,6 +44,7 @@ def _listing_fields(result: dict) -> dict:
         "suno": result.get("suno"),
         "product_attributes": result.get("product_attributes"),
         "missing_attributes": result.get("missing_attributes", []),
+        "authenticity": result.get("authenticity"),
         "clarification": result.get("clarification"),
         "listing": result.get("listing"),
         "price": result.get("price"),
@@ -79,13 +88,13 @@ async def run_listing(
     # listing to its graph thread.
     run_id = str(uuid.uuid4())
     result = await asyncio.to_thread(
-        orchestrator.run, voice_text, image_ref, desired_margin_pct, run_id
+        orchestrator.run, voice_text, image_ref, desired_margin_pct, run_id, seller_id
     )
 
     db = get_db()
     now = datetime.now(timezone.utc)
     doc = {
-        "seller_id": ObjectId(seller_id) if seller_id else None,
+        "seller_id": _oid_or_none(seller_id),
         "thread_id": run_id,
         "image_ref": image_ref,
         **_listing_fields(result),
@@ -142,7 +151,7 @@ async def run_listing_stream(
         def worker():
             try:
                 for chunk in orchestrator.stream_run(
-                    voice_text, image_ref, desired_margin_pct, run_id
+                    voice_text, image_ref, desired_margin_pct, run_id, seller_id
                 ):
                     loop.call_soon_threadsafe(queue.put_nowait, ("update", chunk))
             except Exception as exc:  # noqa: BLE001 - surface to the client
@@ -169,7 +178,7 @@ async def run_listing_stream(
         result = await asyncio.to_thread(orchestrator.final_state, run_id)
         now = datetime.now(timezone.utc)
         doc = {
-            "seller_id": ObjectId(seller_id) if seller_id else None,
+            "seller_id": _oid_or_none(seller_id),
             "thread_id": run_id,
             "image_ref": image_ref,
             **_listing_fields(result),

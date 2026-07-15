@@ -36,11 +36,13 @@ MAX_QUALITY_TRIES = 2
 class AarambhiniState(TypedDict, total=False):
     voice_text: str
     image_ref: str  # GridFS id — NOT a live PIL.Image (which can't be checkpointed)
+    seller_id: str
     desired_margin_pct: int
     # agent outputs
     suno: dict
     product_attributes: dict
     missing_attributes: list
+    authenticity: dict
     listing: dict
     price: dict
     compliance: dict
@@ -90,6 +92,48 @@ def _size_guide_text(state) -> str:
 
 
 # ------------------------------------------------------------------ nodes
+def _authenticity(image, suno, state) -> dict:
+    """Combine pHash duplicate detection + Gemini's visual authenticity read.
+
+    Verdict: 'blocked' only for a high-confidence steal (same photo, different
+    seller); 'review' for softer signals (watermark / stock / AI look, or a
+    duplicate we can't pin to another seller); else 'ok'. We never hard-reject a
+    real seller on a soft signal.
+    """
+    if image is None:
+        return {"verdict": "ok", "flags": []}
+
+    fp = {"phash": None, "duplicate": False, "cross_seller": False}
+    try:
+        fp = graph_store.check_and_store_fingerprint(
+            image, state.get("seller_id"), state.get("image_ref")
+        )
+    except Exception:  # noqa: BLE001 - fingerprinting must never crash intake
+        pass
+
+    gem = suno.get("photo_authenticity") or "original"
+    flags = []
+    if fp["cross_seller"]:
+        flags.append("This exact photo is already used by another seller.")
+    elif fp["duplicate"]:
+        flags.append("This photo matches one already uploaded to Aarambhini.")
+    if gem == "watermarked":
+        flags.append("The photo appears to carry a watermark or logo.")
+    elif gem == "stock_or_catalogue":
+        flags.append("The photo looks like a stock or catalogue image, not an original phone photo.")
+    elif gem == "likely_ai":
+        flags.append("The photo may be AI-generated.")
+
+    verdict = "blocked" if fp["cross_seller"] else ("review" if flags else "ok")
+    return {
+        "verdict": verdict,
+        "flags": flags,
+        "phash": fp["phash"],
+        "photo_authenticity": gem,
+        "note": suno.get("authenticity_note"),
+    }
+
+
 def suno_node(state) -> dict:
     image = graph_store.load_image(state.get("image_ref"))
     s = suno_agent.run(state["voice_text"], image)
@@ -97,11 +141,13 @@ def suno_node(state) -> dict:
     # keep state["suno"] to the intake facts downstream agents read.
     pa = s.pop("product_attributes", {}) or {}
     ma = s.pop("missing_attributes", []) or []
-    logged = {**s, "product_attributes": pa, "missing_attributes": ma}
+    auth = _authenticity(image, s, state)
+    logged = {**s, "product_attributes": pa, "missing_attributes": ma, "authenticity": auth}
     return {
         "suno": s,
         "product_attributes": pa,
         "missing_attributes": ma,
+        "authenticity": auth,
         "tries": 0,
         "quality_tries": 0,
         "log": [("Suno", logged)],
@@ -110,7 +156,14 @@ def suno_node(state) -> dict:
 
 def reject_node(state) -> dict:
     s = state["suno"]
-    return {"status": "needs_retake", "reason": s.get("photo_issue") or "photo unclear"}
+    if state.get("authenticity", {}).get("verdict") == "blocked":
+        reason = (
+            "This photo appears to already be used by another seller. Please upload "
+            "your own original photo of the product you made."
+        )
+    else:
+        reason = s.get("photo_issue") or "photo unclear"
+    return {"status": "needs_retake", "reason": reason}
 
 
 def _blocking_gaps(state) -> list:
@@ -355,7 +408,11 @@ def approval_node(state) -> dict:
 
 # ----------------------------------------------------------------- routing
 def photo_gate(state) -> str:
-    return "continue" if state["suno"].get("photo_ok") else "reject"
+    if not state["suno"].get("photo_ok"):
+        return "reject"
+    if state.get("authenticity", {}).get("verdict") == "blocked":
+        return "reject"  # high-confidence stolen photo
+    return "continue"
 
 
 def after_likho(state) -> str:
@@ -446,7 +503,19 @@ def _annotate(out: dict, tid: str) -> dict:
     return out
 
 
-def run(voice_text, image_ref=None, desired_margin_pct=20, thread_id=None) -> dict:
+def _initial_state(voice_text, image_ref, seller_id, desired_margin_pct):
+    return {
+        "voice_text": voice_text,
+        "image_ref": image_ref,
+        "seller_id": seller_id,
+        "desired_margin_pct": desired_margin_pct,
+        "tries": 0,
+        "quality_tries": 0,
+        "log": [],
+    }
+
+
+def run(voice_text, image_ref=None, desired_margin_pct=20, thread_id=None, seller_id=None) -> dict:
     """Run the crew. image_ref is a GridFS id (or None); the graph loads the photo
     from it so no live PIL.Image ever enters checkpointed state.
 
@@ -455,14 +524,7 @@ def run(voice_text, image_ref=None, desired_margin_pct=20, thread_id=None) -> di
     """
     tid = thread_id or str(uuid.uuid4())
     final = _GRAPH.invoke(
-        {
-            "voice_text": voice_text,
-            "image_ref": image_ref,
-            "desired_margin_pct": desired_margin_pct,
-            "tries": 0,
-            "quality_tries": 0,
-            "log": [],
-        },
+        _initial_state(voice_text, image_ref, seller_id, desired_margin_pct),
         config={"configurable": {"thread_id": tid}},
     )
     return _annotate(dict(final), tid)
@@ -479,7 +541,7 @@ def resume(thread_id, value) -> dict:
     return _annotate(dict(final), thread_id)
 
 
-def stream_run(voice_text, image_ref=None, desired_margin_pct=20, thread_id=None):
+def stream_run(voice_text, image_ref=None, desired_margin_pct=20, thread_id=None, seller_id=None):
     """Yield per-node updates as the crew runs, for live streaming to the UI.
 
     Each item is a dict {node_name: state_delta} (LangGraph stream_mode=updates).
@@ -488,14 +550,7 @@ def stream_run(voice_text, image_ref=None, desired_margin_pct=20, thread_id=None
     """
     tid = thread_id or str(uuid.uuid4())
     yield from _GRAPH.stream(
-        {
-            "voice_text": voice_text,
-            "image_ref": image_ref,
-            "desired_margin_pct": desired_margin_pct,
-            "tries": 0,
-            "quality_tries": 0,
-            "log": [],
-        },
+        _initial_state(voice_text, image_ref, seller_id, desired_margin_pct),
         config={"configurable": {"thread_id": tid}},
         stream_mode="updates",
     )

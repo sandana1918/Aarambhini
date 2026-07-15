@@ -280,26 +280,33 @@ export default function SellPage() {
               </div>
             )}
 
-            {/* Photo rejected */}
-            {retake && (
-              <div className="card border-saffron/40 p-6">
-                <div className="flex items-start gap-3">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-warn-bg text-warn">
-                    <Icon name="camera" size={20} />
-                  </span>
-                  <div>
-                    <p className="text-[15px] font-bold text-ink">Suno stopped the pipeline</p>
-                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-2">
-                      {result?.reason}
-                    </p>
-                    <p className="mt-3 text-[12px] text-muted">
-                      Nothing else ran — no point writing a listing around a photo buyers
-                      can&apos;t see. Upload a clearer photo and run again.
-                    </p>
+            {/* Photo rejected — quality issue or a stolen/duplicate photo */}
+            {retake &&
+              (() => {
+                const blocked = result?.authenticity?.verdict === 'blocked';
+                return (
+                  <div className="card border-saffron/40 p-6">
+                    <div className="flex items-start gap-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-warn-bg text-warn">
+                        <Icon name={blocked ? 'ban' : 'camera'} size={20} />
+                      </span>
+                      <div>
+                        <p className="text-[15px] font-bold text-ink">
+                          {blocked ? 'This photo can’t be used' : 'Suno stopped the pipeline'}
+                        </p>
+                        <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-2">
+                          {result?.reason}
+                        </p>
+                        <p className="mt-3 text-[12px] text-muted">
+                          {blocked
+                            ? 'Take a fresh photo of your own product and run again — it keeps every seller’s listings genuine.'
+                            : 'Nothing else ran — no point writing a listing around a photo buyers can’t see. Upload a clearer photo and run again.'}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            )}
+                );
+              })()}
 
             {needsClarification && result && (
               <div className="card border-brand-200 p-6">
@@ -358,12 +365,39 @@ export default function SellPage() {
                     <span className={`h-2 w-2 rounded-full ${riskStyle.dot}`} />
                     Returns risk: {risk}
                   </span>
+                  {result.authenticity?.verdict === 'ok' && (
+                    <span className="flex items-center gap-1.5 text-[13px] text-ok">
+                      <Icon name="check" size={14} /> Photo verified
+                    </span>
+                  )}
                   {result.suno?.detected_language && (
                     <span className="ml-auto rounded-full bg-brand-50 px-2.5 py-1 font-mono text-[11px] text-brand-700">
                       lang: {result.suno.detected_language}
                     </span>
                   )}
                 </div>
+
+                {/* Photo authenticity — soft flags surfaced for review, never auto-rejected */}
+                {result.authenticity?.verdict === 'review' &&
+                  !!result.authenticity.flags?.length && (
+                    <div className="card border-saffron/40 bg-warn-bg/40 p-4">
+                      <div className="flex items-center gap-2 text-warn">
+                        <Icon name="alert" size={16} />
+                        <p className="text-[13px] font-bold">Please double-check this photo</p>
+                      </div>
+                      <ul className="mt-2 space-y-1">
+                        {result.authenticity.flags.map((f) => (
+                          <li key={f} className="text-[12px] leading-relaxed text-ink-2">
+                            • {f}
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-2 text-[11px] text-muted">
+                        You can still publish — this is just a heads-up to make sure it’s your own
+                        product photo.
+                      </p>
+                    </div>
+                  )}
 
                 {/* Listing */}
                 <section className="card overflow-hidden">
@@ -619,6 +653,10 @@ export default function SellPage() {
                           Reject
                         </button>
                       </div>
+                      <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted">
+                        <Icon name="check" size={13} className="mt-0.5 shrink-0" />
+                        By publishing, you confirm this is your own product and your own photo.
+                      </p>
                     </>
                   )}
                 </section>

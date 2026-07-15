@@ -235,6 +235,8 @@ def _fallback(voice_text, image):
         "attributes": {"size": None, "colour": product_attributes.get("color")},
         "photo_ok": photo_ok,
         "photo_issue": photo_issue,
+        "photo_authenticity": "unsure",
+        "authenticity_note": None,
         "detected_language": detected_language,
         "product_attributes": product_attributes,
         "missing_attributes": missing,
@@ -255,7 +257,11 @@ def run(voice_text, image=None):
         "blurry, cluttered, or the product is unclear, set photo_ok=false and give a "
         "short, kind photo_issue like 'too dark, retake near a window'. Otherwise "
         "photo_ok=true and photo_issue=null. Use the photo to fill visual attributes "
-        "(colour, pattern, type)."
+        "(colour, pattern, type). Also assess authenticity: does it look like an "
+        "ORIGINAL phone photo of a real handmade product, or does it have a visible "
+        "watermark/logo, look like a professional stock/catalogue image, or look "
+        "AI-generated? Be conservative — a plain, slightly imperfect phone photo is "
+        "'original'. Only flag clear cases."
         if has_image
         else "NO product photo was provided. Set photo_ok=false and photo_issue="
         "'no photo provided, please upload one clear product photo'."
@@ -297,6 +303,8 @@ Return STRICT JSON only, exactly these keys:
   "category": "<one of the category keys above>",
   "photo_ok": <true or false>,
   "photo_issue": <short string or null>,
+  "photo_authenticity": "<original | watermarked | stock_or_catalogue | likely_ai | unsure>",
+  "authenticity_note": <short reason or null>,
   "detected_language": "<ISO code like hi, en, ta, bn>",
   "product_attributes": {{ <the chosen category's field keys>: <value or null> }}
 }}"""
@@ -332,6 +340,8 @@ Return STRICT JSON only, exactly these keys:
         "attributes": {"size": product_attributes.get("size"), "colour": product_attributes.get("color")},
         "photo_ok": bool(raw.get("photo_ok")),
         "photo_issue": raw.get("photo_issue"),
+        "photo_authenticity": raw.get("photo_authenticity") or "original",
+        "authenticity_note": raw.get("authenticity_note"),
         "detected_language": raw.get("detected_language"),
         "product_attributes": product_attributes,
         "missing_attributes": missing,
