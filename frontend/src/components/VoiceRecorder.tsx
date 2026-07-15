@@ -1,0 +1,109 @@
+'use client';
+
+import { useRef, useState } from 'react';
+import { startRecording, type RecorderHandle } from '@/lib/recorder';
+import { transcribeAudio } from '@/lib/api';
+
+type Phase = 'idle' | 'recording' | 'transcribing';
+
+export function VoiceRecorder({
+  onTranscript,
+  disabled,
+}: {
+  onTranscript: (text: string) => void;
+  disabled?: boolean;
+}) {
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [seconds, setSeconds] = useState(0);
+  const handleRef = useRef<RecorderHandle | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function stopTimer() {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+  }
+
+  async function begin() {
+    setError(null);
+    try {
+      handleRef.current = await startRecording();
+      setSeconds(0);
+      setPhase('recording');
+      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+    } catch {
+      setError('Microphone blocked. Allow mic access, or just type below.');
+    }
+  }
+
+  async function finish() {
+    if (!handleRef.current) return;
+    stopTimer();
+    setPhase('transcribing');
+    try {
+      const wav = await handleRef.current.stop();
+      const { text } = await transcribeAudio(wav);
+      onTranscript(text);
+      setPhase('idle');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Transcription failed. Please try again.');
+      setPhase('idle');
+    } finally {
+      handleRef.current = null;
+    }
+  }
+
+  const mmss = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+
+  return (
+    <div className="mt-2">
+      {phase === 'idle' && (
+        <button
+          type="button"
+          onClick={begin}
+          disabled={disabled}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-[13px] font-semibold text-brand-700 transition hover:bg-brand-100 disabled:opacity-50"
+        >
+          <MicIcon /> Record a voice note
+        </button>
+      )}
+
+      {phase === 'recording' && (
+        <button
+          type="button"
+          onClick={finish}
+          className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-brand px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-brand-600"
+        >
+          <span className="flex h-2.5 w-2.5 animate-pulse rounded-full bg-white" />
+          Recording {mmss} — tap to stop
+        </button>
+      )}
+
+      {phase === 'transcribing' && (
+        <div className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-line bg-canvas px-4 py-2.5 text-[13px] font-semibold text-ink-2">
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand-200 border-t-brand" />
+          Transcribing your voice…
+        </div>
+      )}
+
+      {error && <p className="mt-2 text-[12px] text-danger">{error}</p>}
+    </div>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z"
+        fill="currentColor"
+      />
+      <path
+        d="M19 11a7 7 0 0 1-14 0M12 18v3"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}

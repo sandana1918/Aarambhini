@@ -11,10 +11,46 @@ import csv
 import sys
 import json
 import asyncio
+from datetime import datetime, timezone
 
-from .models import ComplianceRule, PriceBenchmark
+from .models import ComplianceRule, PriceBenchmark, SellerCreate
 
 _DATA = os.path.join(os.path.dirname(__file__), "data")
+
+# A few realistic SHG sellers so the seller_id flow is demonstrable out of the box.
+# Kept small and clearly synthetic — phone numbers use the reserved 999xxxxxxx range.
+_DEMO_SELLERS = [
+    {
+        "phone": "9990000001",
+        "name": "Sunita Devi",
+        "preferred_language": "hi",
+        "shg_name": "Aarambh Mahila SHG",
+        "address": {"line": "Ward 4, Near Panchayat Bhawan", "district": "Muzaffarpur",
+                    "state": "Bihar", "pincode": "842001"},
+        "packer_label": {"name": "Sunita Devi", "address": "Ward 4, Muzaffarpur, Bihar 842001"},
+        "licenses": {"fssai": None, "bis": None, "gstin": None},
+    },
+    {
+        "phone": "9990000002",
+        "name": "Lakshmi Ammal",
+        "preferred_language": "ta",
+        "shg_name": "Kalvi Women's Collective",
+        "address": {"line": "12 Bharathi Street", "district": "Madurai",
+                    "state": "Tamil Nadu", "pincode": "625001"},
+        "packer_label": {"name": "Lakshmi Ammal", "address": "12 Bharathi Street, Madurai, TN 625001"},
+        "licenses": {"fssai": "12345678901234", "bis": None, "gstin": None},
+    },
+    {
+        "phone": "9990000003",
+        "name": "Ratna Barik",
+        "preferred_language": "or",
+        "shg_name": "Konark Handicraft SHG",
+        "address": {"line": "Village Raghurajpur", "district": "Puri",
+                    "state": "Odisha", "pincode": "752012"},
+        "packer_label": {"name": "Ratna Barik", "address": "Raghurajpur, Puri, Odisha 752012"},
+        "licenses": {"fssai": None, "bis": None, "gstin": None},
+    },
+]
 
 
 def load_compliance_rules() -> list[dict]:
@@ -47,8 +83,13 @@ def load_price_benchmarks() -> list[dict]:
     return docs
 
 
+def load_demo_sellers() -> list[dict]:
+    """Validate the demo sellers through the same Pydantic model the API uses."""
+    return [SellerCreate(**s).model_dump() for s in _DEMO_SELLERS]
+
+
 async def seed():
-    from .db import get_db, ensure_indexes, ping, COMPLIANCE_RULES, PRICE_BENCHMARKS
+    from .db import get_db, ensure_indexes, ping, COMPLIANCE_RULES, PRICE_BENCHMARKS, SELLERS
 
     await ping()
     await ensure_indexes()
@@ -64,18 +105,33 @@ async def seed():
             {"category": b["category"], "region": b["region"]}, {"$set": b}, upsert=True
         )
 
-    print(f"Seeded {len(rules)} compliance rules and {len(benches)} price benchmarks into "
-          f"'{db.name}'.")
+    # Demo sellers — upsert by phone so re-running refreshes rather than duplicates,
+    # and set created_at only on first insert.
+    sellers = load_demo_sellers()
+    now = datetime.now(timezone.utc)
+    for s in sellers:
+        await db[SELLERS].update_one(
+            {"phone": s["phone"]},
+            {"$set": s, "$setOnInsert": {"created_at": now}},
+            upsert=True,
+        )
+
+    print(f"Seeded {len(rules)} compliance rules, {len(benches)} price benchmarks, and "
+          f"{len(sellers)} demo sellers into '{db.name}'.")
 
 
 def dry_run():
     rules = load_compliance_rules()
     benches = load_price_benchmarks()
+    sellers = load_demo_sellers()
     print(f"[dry-run] {len(rules)} compliance rules validated:")
     for r in rules:
         lic = ",".join(r["required_licenses"]) or "-"
         print(f"  - {r['category']:20s} labels={len(r['required_labels'])} licenses={lic}")
     print(f"[dry-run] {len(benches)} price benchmarks validated.")
+    print(f"[dry-run] {len(sellers)} demo sellers validated:")
+    for s in sellers:
+        print(f"  - {s['name']:16s} {s['preferred_language']}  {s['shg_name']}")
     # Cross-check: every benchmark category has a rule and vice-versa.
     rc = {r["category"] for r in rules}
     bc = {b["category"] for b in benches}

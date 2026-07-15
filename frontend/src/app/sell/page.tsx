@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/Chrome';
 import { AgentTimeline } from '@/components/AgentTimeline';
+import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { runListing, approveListing } from '@/lib/api';
 import type { RunResult } from '@/lib/types';
 
@@ -79,15 +80,21 @@ export default function SellPage() {
             <label className="block text-[13px] font-semibold text-ink">
               1. Tell us about your product
             </label>
+            <VoiceRecorder onTranscript={setVoiceText} disabled={loading} />
+            <div className="my-2.5 flex items-center gap-3">
+              <span className="h-px flex-1 bg-line" />
+              <span className="text-[11px] text-muted">or type it</span>
+              <span className="h-px flex-1 bg-line" />
+            </div>
             <textarea
               value={voiceText}
               onChange={(e) => setVoiceText(e.target.value)}
               rows={4}
-              className="mt-2 w-full resize-none rounded-xl border border-line bg-canvas px-3.5 py-3 text-[14px] text-ink outline-none transition placeholder:text-muted focus:border-brand focus:bg-surface focus:ring-4 focus:ring-brand-100"
+              className="w-full resize-none rounded-xl border border-line bg-canvas px-3.5 py-3 text-[14px] text-ink outline-none transition placeholder:text-muted focus:border-brand focus:bg-surface focus:ring-4 focus:ring-brand-100"
               placeholder="Hindi, Tamil, Bengali, English…"
             />
             <p className="mt-1.5 text-[11px] text-muted">
-              Any Indian language — Suno detects it automatically.
+              Speak or type — Suno detects the language automatically.
             </p>
 
             <label className="mt-6 block text-[13px] font-semibold text-ink">

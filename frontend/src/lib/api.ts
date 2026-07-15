@@ -31,6 +31,14 @@ export async function runListing(input: {
   return json<RunResult>(res);
 }
 
+export async function transcribeAudio(audio: Blob): Promise<{ text: string }> {
+  const fd = new FormData();
+  // Filename extension hints the server/Gemini at the container; WAV is universal.
+  fd.append('audio', audio, 'voice-note.wav');
+  const res = await fetch(`${API_BASE}/listings/transcribe`, { method: 'POST', body: fd });
+  return json<{ text: string }>(res);
+}
+
 export async function approveListing(
   id: string,
   approved: boolean,

@@ -73,6 +73,35 @@ async def run_listing(
     return _out(doc)
 
 
+@router.post("/transcribe")
+async def transcribe(audio: UploadFile = File(...)):
+    """Speech-to-text: a seller voice note -> transcript, in the seller's own language.
+
+    Same transcript then feeds /run, so voice and typed input share one pipeline.
+    Gemini reads the audio natively (22 Indian languages); on failure we surface a
+    clear error rather than a silent empty listing.
+    """
+    import llm  # repo-root module; imported lazily so the backend stays importable
+
+    raw = await audio.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="The recording was empty — please try again.")
+
+    try:
+        text = await asyncio.to_thread(
+            llm.transcribe_audio, raw, audio.content_type or "audio/wav"
+        )
+    except Exception as exc:  # noqa: BLE001 - report transcription failure clearly
+        raise HTTPException(status_code=502, detail=f"Could not transcribe the audio: {exc}")
+
+    if not text:
+        raise HTTPException(
+            status_code=422,
+            detail="Couldn't make out any speech — please record again in a quiet spot.",
+        )
+    return {"text": text, "detected_via": "gemini_audio"}
+
+
 @router.get("/{listing_id}")
 async def get_listing(listing_id: str):
     db = get_db()
