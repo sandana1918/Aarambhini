@@ -113,6 +113,49 @@ def reject_node(state) -> dict:
     return {"status": "needs_retake", "reason": s.get("photo_issue") or "photo unclear"}
 
 
+def _blocking_gaps(state) -> list:
+    """Only information without which we can't build a valid listing at all.
+
+    Everything else (size, packer, mfg date, optional licences) has a safe default
+    or stays on the post-listing checklist — we do NOT interrogate the seller.
+    """
+    suno = state.get("suno", {}) or {}
+    gaps = []
+    if not suno.get("cost_price_inr"):  # None or 0 → pricing would be nonsense
+        gaps.append({
+            "field": "cost_price_inr",
+            "type": "number",
+            "prompt": "We couldn't hear a price. How much does one piece cost you to "
+                      "make, or what price do you want to sell at? Enter the amount in ₹.",
+        })
+    return gaps
+
+
+def clarify_node(state) -> dict:
+    """Ask the seller ONLY for blocking gaps, then resume the same run.
+
+    If nothing is blocking (the common case), this passes straight through with no
+    interrupt. Otherwise it pauses (checkpointed) until /clarify resumes it with
+    the seller's answers.
+    """
+    gaps = _blocking_gaps(state)
+    if not gaps:
+        return {}
+
+    answers = interrupt({"kind": "clarification", "questions": gaps}) or {}
+
+    out = {}
+    suno = dict(state.get("suno") or {})
+    if answers.get("cost_price_inr"):
+        try:
+            suno["cost_price_inr"] = int(answers["cost_price_inr"])
+            out["suno"] = suno
+        except (TypeError, ValueError):
+            pass
+    out["log"] = [("Seller clarification", {"answers": answers})]
+    return out
+
+
 def likho_node(state) -> dict:
     append_disclaimer = None
     revision_note = None
@@ -344,6 +387,7 @@ def build_graph():
     g = StateGraph(AarambhiniState)
     g.add_node("suno", suno_node)
     g.add_node("reject", reject_node)
+    g.add_node("clarify", clarify_node)
     g.add_node("likho", likho_node)
     g.add_node("review", review_node)
     g.add_node("daam", daam_node)
@@ -355,9 +399,11 @@ def build_graph():
     g.add_node("approval", approval_node)
 
     g.add_edge(START, "suno")
-    # Suno also fills structured attributes in the same call, then hands to Likho.
-    g.add_conditional_edges("suno", photo_gate, {"reject": "reject", "continue": "likho"})
+    # Suno also fills structured attributes in the same call. Then clarify asks the
+    # seller only for blocking gaps (e.g. a missing price) before Likho writes.
+    g.add_conditional_edges("suno", photo_gate, {"reject": "reject", "continue": "clarify"})
     g.add_edge("reject", END)
+    g.add_edge("clarify", "likho")
 
     # Likho fans out to whichever loop it is serving.
     g.add_conditional_edges("likho", after_likho,
@@ -387,12 +433,25 @@ def build_graph():
 _GRAPH = build_graph()
 
 
+def _annotate(out: dict, tid: str) -> dict:
+    """Surface a pending interrupt: if the graph paused for clarification, mark it."""
+    out["thread_id"] = tid
+    intr = out.pop("__interrupt__", None)
+    if intr:
+        first = intr[0]
+        payload = getattr(first, "value", first)
+        if isinstance(payload, dict) and payload.get("kind") == "clarification":
+            out["status"] = "needs_clarification"
+            out["clarification"] = payload
+    return out
+
+
 def run(voice_text, image_ref=None, desired_margin_pct=20, thread_id=None) -> dict:
     """Run the crew. image_ref is a GridFS id (or None); the graph loads the photo
     from it so no live PIL.Image ever enters checkpointed state.
 
     thread_id keys the checkpoint; pass the listing/run id to make the run
-    resumable. Returns the final state dict.
+    resumable. Returns the final state dict (may pause at clarification or approval).
     """
     tid = thread_id or str(uuid.uuid4())
     final = _GRAPH.invoke(
@@ -406,24 +465,18 @@ def run(voice_text, image_ref=None, desired_margin_pct=20, thread_id=None) -> di
         },
         config={"configurable": {"thread_id": tid}},
     )
-    out = dict(final)
-    out["thread_id"] = tid
-    return out
+    return _annotate(dict(final), tid)
 
 
-def resume(thread_id, decision) -> dict:
-    """Resume a run paused at the approval interrupt, with the seller's decision.
-
-    decision: {"approved": bool, "notes": str|None, "edits": {...}|None}.
-    Returns the final state (status published / rejected_by_seller, plus any edits).
+def resume(thread_id, value) -> dict:
+    """Resume a paused run. value is the seller's clarification answers OR approval
+    decision, depending on which interrupt the run is paused at.
     """
     final = _GRAPH.invoke(
-        Command(resume=decision),
+        Command(resume=value),
         config={"configurable": {"thread_id": thread_id}},
     )
-    out = dict(final)
-    out["thread_id"] = thread_id
-    return out
+    return _annotate(dict(final), thread_id)
 
 
 if __name__ == "__main__":

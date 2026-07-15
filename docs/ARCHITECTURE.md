@@ -117,7 +117,8 @@ flowchart TD
     START([START]) --> SUNO["Suno<br/>intake + photo/authenticity gate"]
 
     SUNO -->|photo_ok = false| REJECT["reject<br/>status: needs_retake"]
-    SUNO -->|photo_ok = true| LIKHO["Likho<br/>write / rewrite listing"]
+    SUNO -->|photo_ok = true| CLARIFY["clarify<br/>interrupt() only for a blocking<br/>gap (e.g. no price stated)"]
+    CLARIFY --> LIKHO["Likho<br/>write / rewrite listing"]
     REJECT --> ENDR([END])
 
     LIKHO --> AFTER{"after_likho:<br/>which loop?"}
@@ -140,9 +141,9 @@ flowchart TD
     FINAL --> APPROVAL["approval<br/>interrupt() — PAUSES here,<br/>state checkpointed to Mongo"]
     APPROVAL -->|"resume: publish / reject / edit"| ENDF([END])
 
-    linkStyle 8 stroke:#f43397,stroke-width:2px;
-    linkStyle 11 stroke:#dc2626,stroke-width:2px;
-    linkStyle 15 stroke:#f59e0b,stroke-width:2px;
+    linkStyle 9 stroke:#f43397,stroke-width:2px;
+    linkStyle 12 stroke:#dc2626,stroke-width:2px;
+    linkStyle 16 stroke:#f59e0b,stroke-width:2px;
 
     classDef gate fill:#fff,stroke:#7c7a87,stroke-dasharray:4 3;
     class AFTER,RR gate;
@@ -154,9 +155,12 @@ flowchart TD
 | 2 | **Compliance** (red) | `niyam → likho → daam → niyam` | Niyam demands a required on-pack label | Likho appends exact label text **verbatim**; Daam re-prices to absorb `label_overhead_inr` so margin survives | `MAX_COMPLIANCE_TRIES = 3` |
 | 3 | **Returns** (amber) | `return_review → likho → finalize` | Wapsi flags `risk_level: high` or `needs_seller_confirmation` | Likho weaves in a size/colour guide; listing held for seller confirm | one-shot (`return_mitigated` flag) |
 
-**Two reject gates** live inside Suno (photo quality + image authenticity) and
-stop bad input before any downstream work. **One interrupt** (`finalize`) holds
-everything for the seller.
+**Suno's photo gate** stops unusable photos before any downstream work. **Two
+human interrupts** pause the graph (state checkpointed to Mongo): `clarify` asks
+only for a blocking gap such as a missing price (resumed via `/clarify`), and
+`approval` holds the finished listing for the seller (resumed via `/approve`).
+(Image *authenticity* — pHash duplicate/stock-photo detection — is scaffolded in
+`image_fingerprints` but not yet built.)
 
 ---
 

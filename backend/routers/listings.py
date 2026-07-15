@@ -14,7 +14,7 @@ from PIL import Image
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 
 from ..db import get_db, LISTINGS, AUDIT_LOG
-from ..models import ApprovalDecision
+from ..models import ApprovalDecision, ClarificationAnswers
 
 router = APIRouter(prefix="/listings", tags=["listings"])
 
@@ -24,6 +24,27 @@ def _out(doc: dict) -> dict:
     if doc.get("seller_id"):
         doc["seller_id"] = str(doc["seller_id"])
     return doc
+
+
+def _listing_fields(result: dict) -> dict:
+    """The listing document fields derived from a (possibly paused) graph result."""
+    return {
+        "status": result.get("status"),
+        "suno": result.get("suno"),
+        "product_attributes": result.get("product_attributes"),
+        "missing_attributes": result.get("missing_attributes", []),
+        "clarification": result.get("clarification"),
+        "listing": result.get("listing"),
+        "price": result.get("price"),
+        "compliance": result.get("compliance"),
+        "returns": result.get("returns"),
+        "packaging_plan": result.get("packaging_plan"),
+        "action_checklist": result.get("action_checklist", []),
+        "approvals": result.get("approvals", []),
+        "seller_notes": result.get("seller_notes"),
+        "activity_log": [{"agent": name, "output": out} for name, out in result.get("log", [])],
+        "reason": result.get("reason"),
+    }
 
 
 @router.post("/run")
@@ -64,19 +85,7 @@ async def run_listing(
         "seller_id": ObjectId(seller_id) if seller_id else None,
         "thread_id": run_id,
         "image_ref": image_ref,
-        "status": result.get("status"),
-        "suno": result.get("suno"),
-        "product_attributes": result.get("product_attributes"),
-        "missing_attributes": result.get("missing_attributes", []),
-        "listing": result.get("listing"),
-        "price": result.get("price"),
-        "compliance": result.get("compliance"),
-        "returns": result.get("returns"),
-        "packaging_plan": result.get("packaging_plan"),
-        "action_checklist": result.get("action_checklist", []),
-        "approvals": result.get("approvals", []),
-        "activity_log": [{"agent": name, "output": out} for name, out in result.get("log", [])],
-        "reason": result.get("reason"),
+        **_listing_fields(result),
         "version": 1,
         "created_at": now,
         "updated_at": now,
@@ -84,6 +93,39 @@ async def run_listing(
     res = await db[LISTINGS].insert_one(doc)
     doc["_id"] = res.inserted_id
     return _out(doc)
+
+
+@router.post("/{listing_id}/clarify")
+async def clarify_listing(listing_id: str, answers: ClarificationAnswers):
+    """Answer the blocking-gap questions and resume the paused run.
+
+    The graph was paused at the clarify interrupt right after Suno; this resumes
+    it with the seller's answers, which flow on through Likho → … → the approval
+    interrupt, leaving the listing ready_for_approval.
+    """
+    import orchestrator
+    import graph_store  # noqa: F401 - ensures the checkpointer client is available
+
+    db = get_db()
+    oid = ObjectId(listing_id)
+    doc = await db[LISTINGS].find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if doc.get("status") != "needs_clarification":
+        raise HTTPException(status_code=409, detail=f"Listing is '{doc.get('status')}', not awaiting clarification")
+    thread_id = doc.get("thread_id")
+    if not thread_id:
+        raise HTTPException(status_code=409, detail="This listing has no resumable graph thread.")
+
+    result = await asyncio.to_thread(
+        orchestrator.resume, thread_id, answers.model_dump(exclude_none=True)
+    )
+
+    now = datetime.now(timezone.utc)
+    update = {**_listing_fields(result), "updated_at": now}
+    await db[LISTINGS].update_one({"_id": oid}, {"$set": update})
+    updated = await db[LISTINGS].find_one({"_id": oid})
+    return _out(updated)
 
 
 @router.post("/transcribe")

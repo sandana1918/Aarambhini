@@ -6,7 +6,7 @@ import { Header } from '@/components/Chrome';
 import { AgentTimeline } from '@/components/AgentTimeline';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { ProductDetails } from '@/components/ProductDetails';
-import { runListing, approveListing } from '@/lib/api';
+import { runListing, approveListing, clarifyListing } from '@/lib/api';
 import type { RunResult } from '@/lib/types';
 
 const HINDI_EXAMPLE = 'मैं हाथ से बने जूट बैग बनाती हूँ, 40 पीस, ₹200 लागत।';
@@ -30,6 +30,8 @@ export default function SellPage() {
   const [editPrice, setEditPrice] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [approving, setApproving] = useState(false);
+  const [clarifyValue, setClarifyValue] = useState('');
+  const [clarifying, setClarifying] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function pickPhoto(f: File | null) {
@@ -83,6 +85,26 @@ export default function SellPage() {
     }
   }
 
+  async function onClarify() {
+    if (!result) return;
+    const v = Number(clarifyValue);
+    if (!clarifyValue.trim() || !Number.isFinite(v) || v <= 0) {
+      setError('Please enter a valid amount in ₹.');
+      return;
+    }
+    setClarifying(true);
+    setError(null);
+    try {
+      const r = await clarifyListing(result.id, { cost_price_inr: Math.round(v) });
+      setResult(r);
+      setClarifyValue('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not submit that answer.');
+    } finally {
+      setClarifying(false);
+    }
+  }
+
   async function onReject() {
     if (!result) return;
     setApproving(true);
@@ -99,6 +121,8 @@ export default function SellPage() {
 
   const ready = result?.status === 'ready_for_approval';
   const retake = result?.status === 'needs_retake';
+  const needsClarification = result?.status === 'needs_clarification';
+  const question = result?.clarification?.questions?.[0];
   const risk = result?.returns?.risk_level ?? 'low';
   const riskStyle = RISK[risk] ?? RISK.low;
 
@@ -245,6 +269,49 @@ export default function SellPage() {
                     <p className="mt-3 text-[12px] text-muted">
                       Nothing else ran — no point writing a listing around a photo buyers
                       can&apos;t see. Upload a clearer photo and run again.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {needsClarification && result && (
+              <div className="card border-brand-200 p-6">
+                <div className="flex items-start gap-3">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-xl">
+                    🤔
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[15px] font-bold text-ink">One quick thing</p>
+                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-2">
+                      {question?.prompt ?? 'We need one more detail before continuing.'}
+                    </p>
+                    <div className="mt-4 flex gap-2.5">
+                      <div className="relative flex-1">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-muted">
+                          ₹
+                        </span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          autoFocus
+                          value={clarifyValue}
+                          onChange={(e) => setClarifyValue(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && onClarify()}
+                          placeholder="e.g. 250"
+                          className="w-full rounded-xl border border-line bg-canvas py-3 pl-7 pr-3 text-[14px] text-ink outline-none focus:border-brand focus:bg-surface focus:ring-4 focus:ring-brand-100"
+                        />
+                      </div>
+                      <button
+                        onClick={onClarify}
+                        disabled={clarifying}
+                        className="rounded-xl bg-brand px-6 py-3 text-[14px] font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
+                      >
+                        {clarifying ? 'Continuing…' : 'Continue'}
+                      </button>
+                    </div>
+                    <p className="mt-2.5 text-[11px] text-muted">
+                      The crew paused here and will pick up exactly where it left off.
                     </p>
                   </div>
                 </div>

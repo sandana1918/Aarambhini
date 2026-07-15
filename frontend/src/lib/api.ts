@@ -46,6 +46,18 @@ export type ApprovalEdits = {
   attributes?: Record<string, string>;
 };
 
+export async function clarifyListing(
+  id: string,
+  answers: { cost_price_inr?: number },
+): Promise<RunResult> {
+  const res = await fetch(`${API_BASE}/listings/${id}/clarify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(answers),
+  });
+  return json<RunResult>(res);
+}
+
 export async function approveListing(
   id: string,
   approved: boolean,

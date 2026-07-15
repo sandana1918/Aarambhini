@@ -58,6 +58,11 @@ class ApprovalDecision(BaseModel):
     edits: Optional[ApprovalEdits] = None
 
 
+class ClarificationAnswers(BaseModel):
+    """Seller's answers to blocking-gap questions raised right after Suno."""
+    cost_price_inr: Optional[int] = None
+
+
 class ComplianceRule(BaseModel):
     category: str
     label: str = ""

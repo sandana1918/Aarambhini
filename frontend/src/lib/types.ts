@@ -64,10 +64,20 @@ export type Approval = { type: string; summary: string };
 
 export type ProductAttributes = Record<string, string | number | string[] | null>;
 
+export type ClarificationQuestion = { field: string; type: string; prompt: string };
+export type Clarification = { kind: string; questions: ClarificationQuestion[] };
+
 export type RunResult = {
   id: string;
-  status: 'ready_for_approval' | 'needs_retake' | 'published' | 'rejected_by_seller' | string;
+  status:
+    | 'ready_for_approval'
+    | 'needs_retake'
+    | 'needs_clarification'
+    | 'published'
+    | 'rejected_by_seller'
+    | string;
   reason?: string | null;
+  clarification?: Clarification | null;
   suno?: Suno;
   product_attributes?: ProductAttributes | null;
   missing_attributes?: string[];
