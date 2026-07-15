@@ -19,6 +19,7 @@ import uuid
 from typing import Annotated, TypedDict
 
 from langgraph.graph import StateGraph, START, END
+from langgraph.types import interrupt, Command
 
 import graph_store
 from agents import suno as suno_agent
@@ -57,6 +58,7 @@ class AarambhiniState(TypedDict, total=False):
     reason: str
     approvals: list
     action_checklist: list
+    seller_notes: str
     log: Annotated[list, operator.add]
 
 
@@ -257,6 +259,57 @@ def finalize_node(state) -> dict:
             "action_checklist": _build_checklist(state)}
 
 
+def approval_node(state) -> dict:
+    """The human gate, as a real LangGraph interrupt.
+
+    The graph PAUSES here (state checkpointed to Mongo) until the seller resumes
+    it via /approve with Command(resume=decision). decision is:
+      {"approved": bool, "notes": str|None, "edits": {price?, title?,
+        description?, attributes?{...}}|None}
+    The seller can approve, reject, or edit-then-publish in one step.
+    """
+    decision = interrupt({
+        "kind": "seller_approval",
+        "listing": state.get("listing"),
+        "price": state.get("price"),
+        "product_attributes": state.get("product_attributes"),
+        "missing_attributes": state.get("missing_attributes"),
+        "compliance": state.get("compliance"),
+        "returns": state.get("returns"),
+        "packaging_plan": state.get("packaging_plan"),
+        "approvals": state.get("approvals"),
+        "action_checklist": state.get("action_checklist"),
+    })
+
+    decision = decision or {}
+    approved = bool(decision.get("approved"))
+    edits = decision.get("edits") or {}
+    out = {}
+
+    # Apply any seller edits before publishing.
+    if edits.get("price"):
+        price = dict(state.get("price") or {})
+        price["selling_price_inr"] = int(edits["price"])
+        price["seller_overridden"] = True
+        out["price"] = price
+    if edits.get("title") or edits.get("description"):
+        listing = dict(state.get("listing") or {})
+        if edits.get("title"):
+            listing["title"] = edits["title"]
+        if edits.get("description"):
+            listing["description"] = edits["description"]
+        out["listing"] = listing
+    if edits.get("attributes"):
+        out["product_attributes"] = {**(state.get("product_attributes") or {}), **edits["attributes"]}
+
+    out["status"] = "published" if approved else "rejected_by_seller"
+    out["seller_notes"] = decision.get("notes")
+    out["log"] = [("Seller decision", {
+        "approved": approved, "edits": edits, "notes": decision.get("notes"),
+    })]
+    return out
+
+
 # ----------------------------------------------------------------- routing
 def photo_gate(state) -> str:
     return "continue" if state["suno"].get("photo_ok") else "reject"
@@ -299,6 +352,7 @@ def build_graph():
     g.add_node("wapsi", wapsi_node)
     g.add_node("return_review", return_review_node)
     g.add_node("finalize", finalize_node)
+    g.add_node("approval", approval_node)
 
     g.add_edge(START, "suno")
     # Suno also fills structured attributes in the same call, then hands to Likho.
@@ -322,7 +376,9 @@ def build_graph():
     g.add_conditional_edges("return_review", return_gate,
                             {"mitigate": "likho", "done": "finalize"})
 
-    g.add_edge("finalize", END)
+    # finalize prepares the preview; approval is the real human interrupt.
+    g.add_edge("finalize", "approval")
+    g.add_edge("approval", END)
     # Durable checkpointing: every node's state is persisted to MongoDB, so a run
     # can pause (human interrupt), resume, or recover from a failure by thread_id.
     return g.compile(checkpointer=graph_store.checkpointer())
@@ -352,6 +408,21 @@ def run(voice_text, image_ref=None, desired_margin_pct=20, thread_id=None) -> di
     )
     out = dict(final)
     out["thread_id"] = tid
+    return out
+
+
+def resume(thread_id, decision) -> dict:
+    """Resume a run paused at the approval interrupt, with the seller's decision.
+
+    decision: {"approved": bool, "notes": str|None, "edits": {...}|None}.
+    Returns the final state (status published / rejected_by_seller, plus any edits).
+    """
+    final = _GRAPH.invoke(
+        Command(resume=decision),
+        config={"configurable": {"thread_id": thread_id}},
+    )
+    out = dict(final)
+    out["thread_id"] = thread_id
     return out
 
 

@@ -127,7 +127,13 @@ async def get_listing(listing_id: str):
 
 @router.post("/{listing_id}/approve")
 async def approve_listing(listing_id: str, decision: ApprovalDecision):
-    """The approval gate — nothing publishes without this explicit call."""
+    """The approval gate — resumes the paused LangGraph run with the seller's
+    decision. The graph was checkpointed at an interrupt() in the approval node;
+    Command(resume=...) continues it to publish/reject, applying any edits.
+    """
+    import orchestrator
+    import graph_store  # noqa: F401 - ensures the checkpointer client is available
+
     db = get_db()
     oid = ObjectId(listing_id)
     doc = await db[LISTINGS].find_one({"_id": oid})
@@ -135,15 +141,41 @@ async def approve_listing(listing_id: str, decision: ApprovalDecision):
         raise HTTPException(status_code=404, detail="Listing not found")
     if doc.get("status") != "ready_for_approval":
         raise HTTPException(status_code=409, detail=f"Listing is '{doc.get('status')}', not awaiting approval")
+    thread_id = doc.get("thread_id")
+    if not thread_id:
+        raise HTTPException(status_code=409, detail="This listing has no resumable graph thread.")
 
-    new_status = "published" if decision.approved else "rejected_by_seller"
+    decision_payload = {
+        "approved": decision.approved,
+        "notes": decision.notes,
+        "edits": decision.edits.model_dump(exclude_none=True) if decision.edits else None,
+    }
+    result = await asyncio.to_thread(orchestrator.resume, thread_id, decision_payload)
+
     now = datetime.now(timezone.utc)
-    await db[LISTINGS].update_one({"_id": oid}, {"$set": {"status": new_status, "updated_at": now}})
+    new_status = result.get("status", "published" if decision.approved else "rejected_by_seller")
+    update = {
+        "status": new_status,
+        "updated_at": now,
+        "seller_notes": result.get("seller_notes"),
+    }
+    # Persist any edits the seller made at approval time.
+    if result.get("price"):
+        update["price"] = result["price"]
+    if result.get("listing"):
+        update["listing"] = result["listing"]
+    if result.get("product_attributes"):
+        update["product_attributes"] = result["product_attributes"]
+    update["activity_log"] = [
+        {"agent": name, "output": out} for name, out in result.get("log", [])
+    ]
+
+    await db[LISTINGS].update_one({"_id": oid}, {"$set": update})
     await db[AUDIT_LOG].insert_one({
         "actor": doc.get("seller_id"),
         "action": "approve_publish" if decision.approved else "reject",
         "listing_id": oid,
-        "payload": {"notes": decision.notes},
+        "payload": decision_payload,
         "ts": now,
     })
     return {"id": listing_id, "status": new_status}

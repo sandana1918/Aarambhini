@@ -45,9 +45,17 @@ class ListingRunRequest(BaseModel):
     # image handled as a separate multipart upload in a real flow; text-first here.
 
 
+class ApprovalEdits(BaseModel):
+    price: Optional[int] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    attributes: Optional[dict] = None
+
+
 class ApprovalDecision(BaseModel):
     approved: bool
     notes: Optional[str] = None
+    edits: Optional[ApprovalEdits] = None
 
 
 class ComplianceRule(BaseModel):
