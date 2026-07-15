@@ -110,8 +110,7 @@ flowchart TD
     START([START]) --> SUNO["Suno<br/>intake + photo/authenticity gate"]
 
     SUNO -->|photo_ok = false| REJECT["reject<br/>status: needs_retake"]
-    SUNO -->|photo_ok = true| VIVRAN["Vivran<br/>structured attributes"]
-    VIVRAN --> LIKHO["Likho<br/>write / rewrite listing"]
+    SUNO -->|photo_ok = true| LIKHO["Likho<br/>write / rewrite listing"]
     REJECT --> ENDR([END])
 
     LIKHO --> AFTER{"after_likho:<br/>which loop?"}
@@ -133,9 +132,9 @@ flowchart TD
 
     FINAL --> ENDF([END])
 
-    linkStyle 9 stroke:#f43397,stroke-width:2px;
-    linkStyle 12 stroke:#dc2626,stroke-width:2px;
-    linkStyle 16 stroke:#f59e0b,stroke-width:2px;
+    linkStyle 8 stroke:#f43397,stroke-width:2px;
+    linkStyle 11 stroke:#dc2626,stroke-width:2px;
+    linkStyle 15 stroke:#f59e0b,stroke-width:2px;
 
     classDef gate fill:#fff,stroke:#7c7a87,stroke-dasharray:4 3;
     class AFTER,RR gate;
@@ -311,22 +310,24 @@ Not a separate file; it *is* the graph plus the gate functions. Owns:
 The quality rubric is intentionally deterministic: title 8–120 chars, description
 ≥60 chars, ≥4 keywords, non-empty maker story.
 
-### Suno — the Ear · `agents/suno.py` · **LLM (+ photo gate)**
+### Suno — the Ear + Cataloguer · `agents/suno.py` · **LLM (+ photo gate)**
 - **In:** `voice_text` (any language), optional `PIL.Image`.
-- **Out:** `product_name, quantity, cost_price_inr, material, category, attributes{size,colour}, photo_ok, photo_issue, detected_language`.
+- **Out:** `product_name, quantity, cost_price_inr, material, category,
+  attributes{size,colour}, photo_ok, photo_issue, detected_language,
+  product_attributes, missing_attributes`.
+- **One vision call, three jobs:** intake, the photo gate, and the category's
+  Meesho-style structured attributes (gender/size/colour/fabric/pattern/type…
+  from `data/listing_attributes.json`). Vivran was a separate agent; it was
+  merged here so the photo is read once, not twice.
 - Categorizes by matching the seller's words against `aliases` from
-  `compliance_rules`. Judges the photo (dark/blurry/too-small) and sets
-  `photo_ok=false` with a kind `photo_issue` to trigger the reject gate.
-- **Fallback:** regex number extraction + Devanagari detection for language.
-
-### Vivran — the Cataloguer · `agents/vivran.py` · **LLM (+ spec)**
-- **In:** Suno facts + the photo; the category's field spec from `data/listing_attributes.json`.
-- **Out:** `attributes` (Meesho-style structured fields for the category — gender,
-  size, colour, fabric/material, pattern, type, occasion, …) + `missing_required`.
-- Gemini **vision** infers visual fields (colour, pattern, type) from the photo;
-  constant fields (country of origin = India) are set, never guessed; anything it
-  can't determine is left null and surfaced to the seller as a to-do rather than
-  fabricated. Runs once, right after Suno, before the copy is written.
+  `compliance_rules`. Judges the photo and sets `photo_ok=false` with a kind
+  `photo_issue` to trigger the reject gate. Gemini vision infers visual
+  attributes (colour/pattern/type); constants (country of origin = India) are
+  set, not guessed; unknown required fields flow to `missing_attributes`.
+- **Price safety net:** a stated ₹/rupee amount in any Indian script is captured
+  as `cost_price_inr` even when the seller never says the word "cost".
+- **Fallback:** regex amount + number extraction, Devanagari language detection,
+  and deterministic attribute fill when the model is unavailable.
 
 ### Likho — the Pen · `agents/likho.py` · **LLM**
 - **In:** Suno facts, plus one of three optional loop inputs:
@@ -421,8 +422,7 @@ Aarambhini/
 ├─ orchestrator.py        # LangGraph state machine (Mukhiya) — the 3 loops
 ├─ llm.py                 # Gemini seam: llm(), llm_json(), transcribe_audio()
 ├─ agents/
-│  ├─ suno.py             # intake + photo gate         (LLM)
-│  ├─ vivran.py           # Meesho-style attributes     (LLM)
+│  ├─ suno.py             # intake + photo gate + attributes (LLM, one call)
 │  ├─ likho.py            # copywriting                 (LLM)
 │  ├─ daam.py             # pricing                     (deterministic)
 │  ├─ niyam.py            # compliance adversary        (LLM + rules)

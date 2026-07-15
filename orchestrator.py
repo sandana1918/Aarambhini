@@ -20,7 +20,6 @@ from typing import Annotated, Any, TypedDict
 from langgraph.graph import StateGraph, START, END
 
 from agents import suno as suno_agent
-from agents import vivran as vivran_agent
 from agents import likho as likho_agent
 from agents import daam as daam_agent
 from agents import niyam as niyam_agent
@@ -89,22 +88,24 @@ def _size_guide_text(state) -> str:
 # ------------------------------------------------------------------ nodes
 def suno_node(state) -> dict:
     s = suno_agent.run(state["voice_text"], state.get("image"))
-    return {"suno": s, "tries": 0, "quality_tries": 0, "log": [("Suno", s)]}
+    # Attributes are produced by the same call; lift them to top-level state,
+    # keep state["suno"] to the intake facts downstream agents read.
+    pa = s.pop("product_attributes", {}) or {}
+    ma = s.pop("missing_attributes", []) or []
+    logged = {**s, "product_attributes": pa, "missing_attributes": ma}
+    return {
+        "suno": s,
+        "product_attributes": pa,
+        "missing_attributes": ma,
+        "tries": 0,
+        "quality_tries": 0,
+        "log": [("Suno", logged)],
+    }
 
 
 def reject_node(state) -> dict:
     s = state["suno"]
     return {"status": "needs_retake", "reason": s.get("photo_issue") or "photo unclear"}
-
-
-def vivran_node(state) -> dict:
-    """Fill the category's Meesho-style structured attributes from words + photo."""
-    v = vivran_agent.run(state["suno"], state.get("image"))
-    return {
-        "product_attributes": v["attributes"],
-        "missing_attributes": v["missing_required"],
-        "log": [("Vivran", v)],
-    }
 
 
 def likho_node(state) -> dict:
@@ -287,7 +288,6 @@ def build_graph():
     g = StateGraph(AarambhiniState)
     g.add_node("suno", suno_node)
     g.add_node("reject", reject_node)
-    g.add_node("vivran", vivran_node)
     g.add_node("likho", likho_node)
     g.add_node("review", review_node)
     g.add_node("daam", daam_node)
@@ -298,11 +298,9 @@ def build_graph():
     g.add_node("finalize", finalize_node)
 
     g.add_edge(START, "suno")
-    g.add_conditional_edges("suno", photo_gate, {"reject": "reject", "continue": "vivran"})
+    # Suno also fills structured attributes in the same call, then hands to Likho.
+    g.add_conditional_edges("suno", photo_gate, {"reject": "reject", "continue": "likho"})
     g.add_edge("reject", END)
-
-    # Structured attributes are filled once, before the copy is written.
-    g.add_edge("vivran", "likho")
 
     # Likho fans out to whichever loop it is serving.
     g.add_conditional_edges("likho", after_likho,
