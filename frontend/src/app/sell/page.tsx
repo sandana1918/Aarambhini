@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Header } from '@/components/Chrome';
 import { AgentTimeline } from '@/components/AgentTimeline';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
+import { ProductDetails } from '@/components/ProductDetails';
 import { runListing, approveListing } from '@/lib/api';
 import type { RunResult } from '@/lib/types';
 
@@ -282,6 +283,12 @@ export default function SellPage() {
                     </div>
                   </div>
                 </section>
+
+                {/* Meesho-style structured attributes */}
+                <ProductDetails
+                  attributes={result.product_attributes}
+                  missing={result.missing_attributes}
+                />
 
                 {/* Compliance / Returns / Packaging */}
                 <div className="grid gap-4 sm:grid-cols-3">

@@ -110,7 +110,8 @@ flowchart TD
     START([START]) --> SUNO["Suno<br/>intake + photo/authenticity gate"]
 
     SUNO -->|photo_ok = false| REJECT["reject<br/>status: needs_retake"]
-    SUNO -->|photo_ok = true| LIKHO["Likho<br/>write / rewrite listing"]
+    SUNO -->|photo_ok = true| VIVRAN["Vivran<br/>structured attributes"]
+    VIVRAN --> LIKHO["Likho<br/>write / rewrite listing"]
     REJECT --> ENDR([END])
 
     LIKHO --> AFTER{"after_likho:<br/>which loop?"}
@@ -132,9 +133,9 @@ flowchart TD
 
     FINAL --> ENDF([END])
 
-    linkStyle 8 stroke:#f43397,stroke-width:2px;
-    linkStyle 11 stroke:#dc2626,stroke-width:2px;
-    linkStyle 15 stroke:#f59e0b,stroke-width:2px;
+    linkStyle 9 stroke:#f43397,stroke-width:2px;
+    linkStyle 12 stroke:#dc2626,stroke-width:2px;
+    linkStyle 16 stroke:#f59e0b,stroke-width:2px;
 
     classDef gate fill:#fff,stroke:#7c7a87,stroke-dasharray:4 3;
     class AFTER,RR gate;
@@ -182,6 +183,8 @@ erDiagram
         ObjectId seller_id FK "indexed, nullable"
         string status "ready_for_approval|needs_retake|published|rejected_by_seller"
         object suno "intake facts + photo verdict"
+        object product_attributes "Meesho fields: gender, size, colour, fabric…"
+        array missing_attributes "required fields the seller must still add"
         object listing "title, description, keywords, maker_story"
         object price "selling_price_inr, margin_pct, discount_floor, breakdown"
         object compliance "labels, licenses, gst_note, label_text"
@@ -316,6 +319,15 @@ The quality rubric is intentionally deterministic: title 8–120 chars, descript
   `photo_ok=false` with a kind `photo_issue` to trigger the reject gate.
 - **Fallback:** regex number extraction + Devanagari detection for language.
 
+### Vivran — the Cataloguer · `agents/vivran.py` · **LLM (+ spec)**
+- **In:** Suno facts + the photo; the category's field spec from `data/listing_attributes.json`.
+- **Out:** `attributes` (Meesho-style structured fields for the category — gender,
+  size, colour, fabric/material, pattern, type, occasion, …) + `missing_required`.
+- Gemini **vision** infers visual fields (colour, pattern, type) from the photo;
+  constant fields (country of origin = India) are set, never guessed; anything it
+  can't determine is left null and surfaced to the seller as a to-do rather than
+  fabricated. Runs once, right after Suno, before the copy is written.
+
 ### Likho — the Pen · `agents/likho.py` · **LLM**
 - **In:** Suno facts, plus one of three optional loop inputs:
   `append_disclaimer` (compliance), `revision_note` (quality), `size_guide` (returns).
@@ -410,6 +422,7 @@ Aarambhini/
 ├─ llm.py                 # Gemini seam: llm(), llm_json(), transcribe_audio()
 ├─ agents/
 │  ├─ suno.py             # intake + photo gate         (LLM)
+│  ├─ vivran.py           # Meesho-style attributes     (LLM)
 │  ├─ likho.py            # copywriting                 (LLM)
 │  ├─ daam.py             # pricing                     (deterministic)
 │  ├─ niyam.py            # compliance adversary        (LLM + rules)
@@ -420,7 +433,9 @@ Aarambhini/
 │  ├─ db.py               # Atlas (Motor) + collections + indexes
 │  ├─ models.py           # Pydantic schemas
 │  ├─ seed.py             # seed rules + benchmarks + demo sellers
-│  ├─ data/               # compliance_rules.json, price_benchmarks.csv
 │  └─ routers/            # listings (run/transcribe/approve), sellers, rules
-└─ frontend/              # Next.js 16 · /sell flow · VoiceRecorder · AgentTimeline
+├─ data/                  # single source of truth, read by agents AND seed:
+│                         #   compliance_rules.json, price_benchmarks.csv,
+│                         #   listing_attributes.json (Meesho field specs)
+└─ frontend/              # Next.js 16 · /sell · VoiceRecorder · ProductDetails · AgentTimeline
 ```

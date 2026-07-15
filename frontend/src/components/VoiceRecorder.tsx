@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { startRecording, type RecorderHandle } from '@/lib/recorder';
 import { transcribeAudio } from '@/lib/api';
 
-type Phase = 'idle' | 'recording' | 'transcribing';
+type Phase = 'idle' | 'recording' | 'transcribing' | 'review';
 
 export function VoiceRecorder({
   onTranscript,
@@ -16,6 +16,7 @@ export function VoiceRecorder({
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [seconds, setSeconds] = useState(0);
+  const [heard, setHeard] = useState('');
   const handleRef = useRef<RecorderHandle | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -26,6 +27,7 @@ export function VoiceRecorder({
 
   async function begin() {
     setError(null);
+    setHeard('');
     try {
       handleRef.current = await startRecording();
       setSeconds(0);
@@ -43,8 +45,11 @@ export function VoiceRecorder({
     try {
       const wav = await handleRef.current.stop();
       const { text } = await transcribeAudio(wav);
+      // Fill the field now so she can also edit inline, but hold a review step
+      // so a non-technical seller explicitly confirms (or re-records) before running.
       onTranscript(text);
-      setPhase('idle');
+      setHeard(text);
+      setPhase('review');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Transcription failed. Please try again.');
       setPhase('idle');
@@ -53,6 +58,8 @@ export function VoiceRecorder({
     }
   }
 
+  // Very short transcripts usually mean noise drowned the speech — nudge a re-record.
+  const looksWeak = heard.trim().length > 0 && heard.trim().length < 12;
   const mmss = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
   return (
@@ -83,6 +90,38 @@ export function VoiceRecorder({
         <div className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-line bg-canvas px-4 py-2.5 text-[13px] font-semibold text-ink-2">
           <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand-200 border-t-brand" />
           Transcribing your voice…
+        </div>
+      )}
+
+      {phase === 'review' && (
+        <div className="rounded-xl border border-brand-200 bg-brand-50/60 p-3.5">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-700">
+            We heard
+          </p>
+          <p className="mt-1 text-[13.5px] leading-relaxed text-ink">“{heard}”</p>
+          {looksWeak && (
+            <p className="mt-2 rounded-lg bg-warn-bg px-2.5 py-1.5 text-[11px] font-medium text-warn">
+              That sounded very short — background noise may have cut in. Please re-record in a
+              quieter spot.
+            </p>
+          )}
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPhase('idle')}
+              className="flex-1 rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-brand-600"
+            >
+              ✓ Sounds right
+            </button>
+            <button
+              type="button"
+              onClick={begin}
+              className="flex items-center gap-1.5 rounded-lg border border-brand-200 bg-surface px-3 py-2 text-[13px] font-semibold text-brand-700 transition hover:bg-brand-100"
+            >
+              <MicIcon /> Re-record
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] text-muted">You can also edit the text below directly.</p>
         </div>
       )}
 

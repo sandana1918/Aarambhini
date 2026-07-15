@@ -1,0 +1,136 @@
+{
+  "_meta": {
+    "note": "Meesho-style structured product attributes per category. Mirrors the fields real Meesho catalog forms require so a listing carries buyer-facing detail (gender, size, colour, fabric/material, pattern, etc.). 'required' fields must be present before a listing is complete; 'infer' hints where the value comes from: photo (Gemini vision), voice (seller's words), seller (must be confirmed by the seller), fixed (constant).",
+    "version": 1
+  },
+  "common": [
+    { "key": "color", "label": "Colour", "type": "text", "required": true, "infer": "photo" },
+    { "key": "net_quantity", "label": "Net Quantity", "type": "text", "required": true, "infer": "voice", "default": "1" },
+    { "key": "country_of_origin", "label": "Country of Origin", "type": "fixed", "required": true, "value": "India" }
+  ],
+  "categories": {
+    "handloom_textiles": {
+      "attributes": [
+        { "key": "gender", "label": "Gender", "type": "enum", "options": ["Women", "Men", "Girls", "Boys", "Unisex"], "required": true, "infer": "voice" },
+        { "key": "size", "label": "Size", "type": "enum", "options": ["Free Size", "S", "M", "L", "XL", "XXL"], "required": true, "infer": "seller" },
+        { "key": "fabric", "label": "Fabric", "type": "enum", "options": ["Cotton", "Silk", "Jute", "Linen", "Khadi", "Georgette", "Chiffon", "Wool", "Blended"], "required": true, "infer": "voice" },
+        { "key": "pattern", "label": "Pattern", "type": "enum", "options": ["Solid", "Printed", "Woven Design", "Embroidered", "Striped", "Checked", "Zari"], "required": false, "infer": "photo" },
+        { "key": "occasion", "label": "Occasion", "type": "enum", "options": ["Daily", "Party", "Festive", "Wedding", "Formal"], "required": false, "infer": "voice" }
+      ]
+    },
+    "apparel_readymade": {
+      "attributes": [
+        { "key": "gender", "label": "Gender", "type": "enum", "options": ["Women", "Men", "Girls", "Boys", "Unisex"], "required": true, "infer": "voice" },
+        { "key": "size", "label": "Size", "type": "multi", "options": ["Free Size", "XS", "S", "M", "L", "XL", "XXL", "XXXL"], "required": true, "infer": "seller" },
+        { "key": "fabric", "label": "Fabric", "type": "enum", "options": ["Cotton", "Rayon", "Silk", "Georgette", "Crepe", "Polyester", "Wool", "Denim", "Blended"], "required": true, "infer": "voice" },
+        { "key": "sleeve_length", "label": "Sleeve Length", "type": "enum", "options": ["Sleeveless", "Short Sleeves", "Three-Quarter Sleeves", "Long Sleeves"], "required": false, "infer": "photo" },
+        { "key": "pattern", "label": "Pattern", "type": "enum", "options": ["Solid", "Printed", "Embroidered", "Striped", "Checked", "Self Design"], "required": false, "infer": "photo" },
+        { "key": "type", "label": "Type", "type": "text", "required": false, "infer": "voice" },
+        { "key": "occasion", "label": "Occasion", "type": "enum", "options": ["Casual", "Party", "Festive", "Ethnic", "Formal"], "required": false, "infer": "voice" }
+      ]
+    },
+    "food_packaged": {
+      "attributes": [
+        { "key": "net_weight", "label": "Net Weight", "type": "text", "required": true, "infer": "voice" },
+        { "key": "veg_nonveg", "label": "Veg / Non-Veg", "type": "enum", "options": ["Vegetarian", "Non-Vegetarian", "Vegan"], "required": true, "infer": "voice" },
+        { "key": "food_type", "label": "Type", "type": "text", "required": true, "infer": "voice" },
+        { "key": "flavour", "label": "Flavour", "type": "text", "required": false, "infer": "voice" },
+        { "key": "shelf_life", "label": "Shelf Life", "type": "text", "required": true, "infer": "seller" },
+        { "key": "organic", "label": "Organic", "type": "enum", "options": ["Yes", "No"], "required": false, "infer": "voice" },
+        { "key": "container_type", "label": "Container Type", "type": "enum", "options": ["Pouch", "Jar", "Box", "Bottle"], "required": false, "infer": "photo" }
+      ]
+    },
+    "jewellery_precious": {
+      "attributes": [
+        { "key": "gender", "label": "Gender", "type": "enum", "options": ["Women", "Men", "Unisex"], "required": true, "infer": "voice" },
+        { "key": "base_metal", "label": "Base Metal", "type": "enum", "options": ["Gold", "Silver"], "required": true, "infer": "voice" },
+        { "key": "purity", "label": "Purity", "type": "enum", "options": ["14K", "18K", "20K", "22K", "23K", "24K", "925 Sterling Silver"], "required": true, "infer": "seller" },
+        { "key": "gross_weight", "label": "Gross Weight (g)", "type": "number", "required": true, "infer": "seller" },
+        { "key": "type", "label": "Type", "type": "enum", "options": ["Necklace", "Ring", "Earrings", "Bangle", "Chain", "Anklet", "Pendant"], "required": true, "infer": "photo" },
+        { "key": "certification", "label": "Certification", "type": "enum", "options": ["BIS Hallmark", "Not Certified"], "required": true, "infer": "seller" }
+      ]
+    },
+    "imitation_jewellery": {
+      "attributes": [
+        { "key": "gender", "label": "Gender", "type": "enum", "options": ["Women", "Girls", "Men", "Unisex"], "required": true, "infer": "voice" },
+        { "key": "base_metal", "label": "Base Metal", "type": "enum", "options": ["Brass", "Alloy", "Copper", "Oxidised Metal", "Beads", "Mixed"], "required": true, "infer": "voice" },
+        { "key": "plating", "label": "Plating", "type": "enum", "options": ["Gold Plated", "Silver Plated", "Oxidised", "Rose Gold", "No Plating"], "required": false, "infer": "photo" },
+        { "key": "stone_type", "label": "Stone Type", "type": "enum", "options": ["Kundan", "American Diamond", "Pearl", "Meenakari", "No Stone"], "required": false, "infer": "photo" },
+        { "key": "type", "label": "Type", "type": "enum", "options": ["Necklace", "Earrings", "Bangles", "Ring", "Anklet", "Maang Tikka", "Set"], "required": true, "infer": "photo" },
+        { "key": "sizing", "label": "Sizing", "type": "enum", "options": ["Adjustable", "Free Size", "Fixed"], "required": false, "infer": "seller" }
+      ]
+    },
+    "cosmetics_handmade": {
+      "attributes": [
+        { "key": "net_weight", "label": "Net Weight / Volume", "type": "text", "required": true, "infer": "voice" },
+        { "key": "form", "label": "Form", "type": "enum", "options": ["Bar", "Liquid", "Cream", "Gel", "Powder", "Oil"], "required": true, "infer": "photo" },
+        { "key": "skin_type", "label": "Suitable For", "type": "enum", "options": ["All Skin Types", "Oily", "Dry", "Sensitive", "Combination"], "required": false, "infer": "voice" },
+        { "key": "key_ingredients", "label": "Key Ingredients", "type": "text", "required": true, "infer": "voice" },
+        { "key": "fragrance", "label": "Fragrance", "type": "text", "required": false, "infer": "voice" },
+        { "key": "shelf_life", "label": "Shelf Life", "type": "text", "required": true, "infer": "seller" }
+      ]
+    },
+    "handicrafts_decor": {
+      "attributes": [
+        { "key": "material", "label": "Material", "type": "enum", "options": ["Terracotta", "Bamboo", "Wood", "Metal", "Ceramic", "Jute", "Clay", "Stone", "Cane"], "required": true, "infer": "voice" },
+        { "key": "product_type", "label": "Type", "type": "text", "required": true, "infer": "voice" },
+        { "key": "dimensions", "label": "Dimensions (L x B x H)", "type": "text", "required": true, "infer": "seller" },
+        { "key": "finish", "label": "Finish", "type": "enum", "options": ["Handpainted", "Natural", "Polished", "Matte", "Glazed"], "required": false, "infer": "photo" }
+      ]
+    },
+    "home_furnishing": {
+      "attributes": [
+        { "key": "material", "label": "Material", "type": "enum", "options": ["Cotton", "Polyester", "Jute", "Silk", "Velvet", "Microfiber", "Blended"], "required": true, "infer": "voice" },
+        { "key": "size", "label": "Size", "type": "enum", "options": ["Single", "Double", "Queen", "King", "Standard", "Free Size"], "required": true, "infer": "seller" },
+        { "key": "dimensions", "label": "Dimensions", "type": "text", "required": true, "infer": "seller" },
+        { "key": "product_type", "label": "Type", "type": "text", "required": true, "infer": "voice" },
+        { "key": "pattern", "label": "Pattern", "type": "enum", "options": ["Solid", "Printed", "Woven", "Embroidered", "Patchwork"], "required": false, "infer": "photo" },
+        { "key": "pieces", "label": "Number of Items", "type": "number", "required": false, "infer": "voice" }
+      ]
+    },
+    "toys_games": {
+      "attributes": [
+        { "key": "material", "label": "Material", "type": "enum", "options": ["Wood", "Cotton", "Plush", "Plastic", "Cloth"], "required": true, "infer": "voice" },
+        { "key": "age_group", "label": "Age Group", "type": "enum", "options": ["0-1.5 Years", "1.5-3 Years", "3-5 Years", "5-8 Years", "8+ Years"], "required": true, "infer": "seller" },
+        { "key": "product_type", "label": "Type", "type": "text", "required": true, "infer": "voice" },
+        { "key": "dimensions", "label": "Dimensions", "type": "text", "required": false, "infer": "seller" }
+      ]
+    },
+    "bags_leather": {
+      "attributes": [
+        { "key": "gender", "label": "Gender", "type": "enum", "options": ["Women", "Men", "Unisex"], "required": true, "infer": "voice" },
+        { "key": "material", "label": "Material", "type": "enum", "options": ["Genuine Leather", "Faux Leather", "Jute", "Canvas", "Cotton", "Juco"], "required": true, "infer": "voice" },
+        { "key": "type", "label": "Type", "type": "enum", "options": ["Handheld", "Sling", "Backpack", "Clutch", "Tote", "Wallet", "Pouch"], "required": true, "infer": "photo" },
+        { "key": "compartments", "label": "No. of Compartments", "type": "number", "required": false, "infer": "seller" },
+        { "key": "dimensions", "label": "Dimensions", "type": "text", "required": false, "infer": "seller" }
+      ]
+    },
+    "ayurvedic_herbal": {
+      "attributes": [
+        { "key": "net_weight", "label": "Net Weight / Volume", "type": "text", "required": true, "infer": "voice" },
+        { "key": "form", "label": "Form", "type": "enum", "options": ["Oil", "Powder", "Paste", "Tablet", "Liquid"], "required": true, "infer": "photo" },
+        { "key": "key_ingredients", "label": "Key Ingredients", "type": "text", "required": true, "infer": "voice" },
+        { "key": "concern", "label": "Concern", "type": "enum", "options": ["Hair Care", "Skin Care", "Immunity", "Digestion", "General Wellness"], "required": false, "infer": "voice" },
+        { "key": "shelf_life", "label": "Shelf Life", "type": "text", "required": true, "infer": "seller" }
+      ]
+    },
+    "candles_fragrance": {
+      "attributes": [
+        { "key": "type", "label": "Type", "type": "enum", "options": ["Pillar", "Jar", "Tealight", "Votive", "Incense", "Diffuser"], "required": true, "infer": "photo" },
+        { "key": "wax_type", "label": "Wax / Material", "type": "enum", "options": ["Soy Wax", "Beeswax", "Paraffin", "Gel", "Not Applicable"], "required": true, "infer": "voice" },
+        { "key": "fragrance", "label": "Fragrance", "type": "text", "required": true, "infer": "voice" },
+        { "key": "net_weight", "label": "Net Weight", "type": "text", "required": true, "infer": "voice" },
+        { "key": "burn_time", "label": "Burn Time", "type": "text", "required": false, "infer": "seller" }
+      ]
+    },
+    "stationery_paper": {
+      "attributes": [
+        { "key": "material", "label": "Material", "type": "enum", "options": ["Handmade Paper", "Recycled Paper", "Card Stock", "Kraft Paper", "Mixed"], "required": true, "infer": "voice" },
+        { "key": "product_type", "label": "Type", "type": "text", "required": true, "infer": "voice" },
+        { "key": "dimensions", "label": "Size", "type": "text", "required": true, "infer": "seller" },
+        { "key": "pages", "label": "No. of Pages / Sheets", "type": "number", "required": false, "infer": "voice" },
+        { "key": "ruling", "label": "Ruling", "type": "enum", "options": ["Ruled", "Unruled", "Dotted", "Not Applicable"], "required": false, "infer": "voice" }
+      ]
+    }
+  }
+}

@@ -1,52 +1,204 @@
 {
-  "_note": "Simplified prototype rules. Accurate at category level; verify exact legal text before production.",
+  "_meta": {
+    "note": "Production compliance dataset. Category-level accuracy; EVERY rule is flagged needs_legal_review=true and must be verified against the current official text before any legal assertion is shown to a seller. This is guidance, not legal advice.",
+    "jurisdiction": "IN",
+    "verified_on": "2026-07-15",
+    "verified_sources": [
+      "FSSAI turnover tiers updated effective 2026-04-01 (Basic <= Rs 1.5 crore; State Rs 1.5 crore-50 crore; Central > Rs 50 crore)",
+      "GST registration threshold Rs 40 lakh goods / Rs 20 lakh special-category states (unchanged)",
+      "BIS mandatory hallmarking in 380 districts as of 6th phase, 2026-03-02; 3 marks = BIS logo + purity + 6-digit HUID"
+    ],
+    "version": 2
+  },
   "gst": {
     "goods_threshold_inr": 4000000,
-    "special_states_threshold_inr": 2000000,
-    "note": "GST registration generally required only if annual turnover exceeds threshold. Most small/SHG sellers are below it and exempt. Some marketplaces still request a GSTIN except for notified exempt categories."
+    "special_category_states_threshold_inr": 2000000,
+    "note": "GST registration is generally required only when annual aggregate turnover crosses the threshold (₹40 lakh for goods; ₹20 lakh in special-category states). Most SHG / home-based sellers are below it. Note the 2023 relief (Notification 34/2023-Central Tax) exempting certain small suppliers selling through e-commerce operators from compulsory registration, subject to conditions.",
+    "source_url": "https://www.cbic.gov.in/",
+    "needs_legal_review": true
   },
   "categories": {
     "handloom_textiles": {
-      "aliases": ["saree", "dupatta", "stole", "jute bag", "cotton bag", "handwoven", "fabric", "cloth", "kurta", "handloom"],
-      "required_labels": ["fabric_content", "care_instructions", "packer_name_and_address", "net_quantity"],
+      "label": "Handloom & Textiles",
+      "aliases": ["saree", "dupatta", "stole", "jute bag", "cotton bag", "handwoven", "fabric", "cloth", "kurta", "handloom", "shawl", "khadi"],
+      "regime": ["Legal Metrology (Packaged Commodities) Rules, 2011"],
+      "required_labels": ["fabric_content", "care_instructions", "net_quantity", "mrp_incl_taxes", "month_year_of_manufacture", "packer_name_and_address", "country_of_origin", "consumer_care_details"],
       "required_licenses": [],
-      "optional_marks": ["Handloom Mark", "India Handmade"],
-      "notes": "Legal Metrology labeling applies to pre-packaged goods. No special license for basic sale."
+      "optional_marks": ["Handloom Mark", "Silk Mark", "India Handmade"],
+      "label_template": "Fabric: <fabric_content>. Care: <care_instructions>. Net Qty: <net_quantity>. MRP: ₹<mrp> (incl. all taxes). Mfg: <mm/yyyy>. Marketed/Packed by: <packer_name>, <address>. Country of Origin: India. Customer care: <phone_or_email>.",
+      "label_overhead_inr": 5,
+      "source_url": "https://legalmetrology.gov.in/",
+      "effective_date": "2011-04-01",
+      "needs_legal_review": true,
+      "notes": "Pre-packaged goods attract Legal Metrology mandatory declarations. No special licence for basic sale of handloom."
     },
-    "food": {
-      "aliases": ["pickle", "laddu", "masala", "spice", "snack", "edible", "homemade food", "papad", "chutney"],
-      "required_labels": ["FSSAI_number", "ingredients", "net_weight", "mfg_date", "best_before", "veg_nonveg_mark"],
+    "apparel_readymade": {
+      "label": "Readymade Apparel",
+      "aliases": ["kurti", "blouse", "readymade", "garment", "dress", "top", "leggings", "nightwear", "baby clothes"],
+      "regime": ["Legal Metrology (Packaged Commodities) Rules, 2011", "Textile fibre & care labelling"],
+      "required_labels": ["size", "fabric_content", "care_instructions", "net_quantity", "mrp_incl_taxes", "month_year_of_manufacture", "packer_name_and_address", "country_of_origin"],
+      "required_licenses": [],
+      "optional_marks": [],
+      "label_template": "Size: <size>. Fabric: <fabric_content>. Care: <care_instructions>. MRP: ₹<mrp> (incl. all taxes). Mfg: <mm/yyyy>. Marketed by: <packer_name>, <address>. Country of Origin: India.",
+      "label_overhead_inr": 5,
+      "source_url": "https://legalmetrology.gov.in/",
+      "effective_date": "2011-04-01",
+      "needs_legal_review": true,
+      "notes": "Add clear size and fibre composition to reduce returns and meet labelling norms."
+    },
+    "food_packaged": {
+      "label": "Food & Beverages",
+      "aliases": ["pickle", "achaar", "laddu", "masala", "spice", "snack", "edible", "homemade food", "papad", "chutney", "honey", "ghee", "murabba"],
+      "regime": ["Food Safety and Standards Act, 2006", "FSS (Labelling & Display) Regulations, 2020"],
+      "required_labels": ["fssai_logo_and_number", "list_of_ingredients", "nutritional_information", "veg_nonveg_mark", "net_weight", "lot_or_batch_number", "date_of_manufacture", "best_before_or_use_by", "allergen_declaration", "fbo_name_and_address"],
       "required_licenses": ["FSSAI_registration_or_license"],
       "optional_marks": [],
-      "notes": "FSSAI registration mandatory for any food business; license tier depends on turnover. Perishable — prefer regional fulfilment."
+      "label_template": "<product_name>. Ingredients: <ingredients>. Veg/Non-Veg: <green/brown dot>. Net Wt: <net_weight>. Batch: <lot>. Mfg: <dd/mm/yyyy>. Best Before: <duration/date>. Allergens: <allergens>. FSSAI Lic. No.: <fssai_number>. Mfd & marketed by: <fbo_name>, <address>.",
+      "label_overhead_inr": 8,
+      "source_url": "https://www.fssai.gov.in/",
+      "effective_date": "2020-01-01",
+      "needs_legal_review": true,
+      "notes": "FSSAI registration/licence is mandatory for any food business. Tiers by annual turnover updated w.e.f. 1 Apr 2026: Basic registration (≤ ₹1.5 crore), State licence (₹1.5 crore–₹50 crore), Central licence (> ₹50 crore). Most SHG/home food sellers now fall under the simpler Basic registration. Perishable — prefer regional fulfilment."
     },
     "jewellery_precious": {
-      "aliases": ["gold", "silver", "precious", "hallmark jewellery"],
-      "required_labels": ["purity", "BIS_hallmark", "net_weight"],
-      "required_licenses": ["BIS_hallmark_registration"],
+      "label": "Precious Jewellery (Gold/Silver)",
+      "aliases": ["gold", "silver", "precious", "hallmark jewellery", "gold chain", "gold ring", "silver anklet"],
+      "regime": ["BIS Act, 2016", "Hallmarking of Gold Jewellery & Artefacts Regulations"],
+      "required_labels": ["purity_in_carat_and_fineness", "bis_hallmark", "huid_number", "net_weight", "jeweller_identification"],
+      "required_licenses": ["BIS_hallmark_registration_of_jeweller"],
       "optional_marks": [],
-      "notes": "BIS hallmarking mandatory for gold/silver articles."
+      "label_template": "Purity: <carat>K (<fineness>). BIS Hallmark + HUID: <huid>. Net Wt: <net_weight> g. Jeweller Reg. No.: <bis_reg>. Sold by: <name>, <address>.",
+      "label_overhead_inr": 10,
+      "source_url": "https://www.bis.gov.in/",
+      "effective_date": "2021-06-16",
+      "needs_legal_review": true,
+      "notes": "Mandatory hallmarking carries 3 marks — BIS logo, purity (carat + fineness) and a 6-digit HUID — for gold jewellery/artefacts in notified districts (380 districts as of the 6th phase, 2 Mar 2026), covering 14K/18K/20K/22K/23K/24K. The jeweller must be BIS-registered. High value — insured shipping. Buyers can verify HUID on the BIS CARE app."
     },
     "imitation_jewellery": {
-      "aliases": ["artificial jewellery", "beads", "imitation", "fashion jewellery", "earrings", "bangles"],
-      "required_labels": ["material", "net_quantity", "packer_name_and_address"],
+      "label": "Imitation / Fashion Jewellery",
+      "aliases": ["artificial jewellery", "beads", "imitation", "fashion jewellery", "earrings", "bangles", "kundan", "oxidised jewellery"],
+      "regime": ["Legal Metrology (Packaged Commodities) Rules, 2011"],
+      "required_labels": ["material", "net_quantity", "mrp_incl_taxes", "packer_name_and_address", "country_of_origin"],
       "required_licenses": [],
       "optional_marks": [],
-      "notes": "No hallmark required; standard pre-packaged labeling applies."
+      "label_template": "Material: <material>. Net Qty: <net_quantity>. MRP: ₹<mrp> (incl. all taxes). Marketed by: <packer_name>, <address>. Country of Origin: India.",
+      "label_overhead_inr": 4,
+      "source_url": "https://legalmetrology.gov.in/",
+      "effective_date": "2011-04-01",
+      "needs_legal_review": true,
+      "notes": "No hallmark required. Standard pre-packaged labelling applies. Declare 'nickel-free' only if true."
     },
-    "cosmetics_soap": {
-      "aliases": ["soap", "cream", "lotion", "cosmetic", "handmade soap", "shampoo"],
-      "required_labels": ["ingredients", "net_weight", "mfg_date", "best_before", "manufacturer_details"],
-      "required_licenses": ["cosmetic_manufacturing_note"],
+    "cosmetics_handmade": {
+      "label": "Cosmetics & Personal Care",
+      "aliases": ["soap", "cream", "lotion", "cosmetic", "handmade soap", "shampoo", "lip balm", "body butter", "face pack"],
+      "regime": ["Drugs and Cosmetics Act, 1940", "Cosmetics Rules, 2020"],
+      "required_labels": ["list_of_ingredients", "net_weight_or_volume", "date_of_manufacture", "best_before", "manufacturer_name_and_address", "manufacturing_license_number", "batch_number"],
+      "required_licenses": ["cosmetic_manufacturing_license"],
       "optional_marks": [],
-      "notes": "Cosmetics regulated under CDSCO; small-scale makers may need manufacturing registration. Verify."
+      "label_template": "<product_name>. Ingredients: <ingredients>. Net Qty: <net_weight>. Mfg: <mm/yyyy>. Best Before: <duration>. Batch: <batch>. Mfg Lic. No.: <license>. Manufactured by: <name>, <address>.",
+      "label_overhead_inr": 7,
+      "source_url": "https://cdsco.gov.in/",
+      "effective_date": "2020-12-15",
+      "needs_legal_review": true,
+      "notes": "Cosmetics are regulated by CDSCO under the Cosmetics Rules, 2020. Small-scale makers generally need a manufacturing licence from the State Licensing Authority. Verify tier and forms."
     },
     "handicrafts_decor": {
-      "aliases": ["pottery", "terracotta", "decor", "craft", "bamboo", "painting", "showpiece", "basket", "candle"],
-      "required_labels": ["material", "net_quantity", "packer_name_and_address"],
+      "label": "Handicrafts & Home Décor",
+      "aliases": ["pottery", "terracotta", "decor", "craft", "bamboo", "painting", "showpiece", "basket", "candle stand", "wall hanging", "macrame"],
+      "regime": ["Legal Metrology (Packaged Commodities) Rules, 2011"],
+      "required_labels": ["material", "net_quantity", "mrp_incl_taxes", "packer_name_and_address", "country_of_origin"],
       "required_licenses": [],
       "optional_marks": ["GI tag (if applicable)"],
-      "notes": "Generally no special license; standard labeling applies. Often fragile — protective packing."
+      "label_template": "Material: <material>. Net Qty: <net_quantity>. MRP: ₹<mrp> (incl. all taxes). Made & packed by: <packer_name>, <address>. Country of Origin: India.",
+      "label_overhead_inr": 5,
+      "source_url": "https://legalmetrology.gov.in/",
+      "effective_date": "2011-04-01",
+      "needs_legal_review": true,
+      "notes": "Generally no special licence. Often fragile — protective packing. GI tag if the craft is registered (e.g. Channapatna toys, Blue Pottery)."
+    },
+    "home_furnishing": {
+      "label": "Home Furnishing",
+      "aliases": ["bedsheet", "cushion cover", "curtain", "table runner", "quilt", "razai", "doormat", "rug", "durrie"],
+      "regime": ["Legal Metrology (Packaged Commodities) Rules, 2011", "Textile fibre & care labelling"],
+      "required_labels": ["dimensions", "fabric_content", "care_instructions", "net_quantity", "mrp_incl_taxes", "packer_name_and_address", "country_of_origin"],
+      "required_licenses": [],
+      "optional_marks": ["Handloom Mark"],
+      "label_template": "Size: <dimensions>. Fabric: <fabric_content>. Care: <care_instructions>. Net Qty: <net_quantity>. MRP: ₹<mrp> (incl. all taxes). Marketed by: <packer_name>, <address>. Country of Origin: India.",
+      "label_overhead_inr": 5,
+      "source_url": "https://legalmetrology.gov.in/",
+      "effective_date": "2011-04-01",
+      "needs_legal_review": true,
+      "notes": "Declare exact dimensions — the top return driver in furnishing."
+    },
+    "toys_games": {
+      "label": "Toys & Games",
+      "aliases": ["toy", "soft toy", "wooden toy", "doll", "puzzle", "board game", "rattle", "channapatna"],
+      "regime": ["Toys (Quality Control) Order, 2020", "IS 9873 series (BIS)"],
+      "required_labels": ["bis_isi_mark", "age_grading", "safety_warnings", "manufacturer_name_and_address", "net_quantity", "country_of_origin"],
+      "required_licenses": ["BIS_ISI_certification"],
+      "optional_marks": ["GI tag (e.g. Channapatna)"],
+      "label_template": "ISI/BIS: <bis_licence>. Suitable for: <age_group>. Warning: <safety_warning>. Net Qty: <net_quantity>. Made by: <name>, <address>. Country of Origin: India.",
+      "label_overhead_inr": 8,
+      "source_url": "https://www.bis.gov.in/",
+      "effective_date": "2021-01-01",
+      "needs_legal_review": true,
+      "notes": "Toys need mandatory BIS certification under the Toys QCO. Certain handmade/GI-registered toys may have exemptions — verify carefully."
+    },
+    "bags_leather": {
+      "label": "Bags & Leather Accessories",
+      "aliases": ["handbag", "wallet", "purse", "backpack", "clutch", "leather belt", "pouch", "sling bag"],
+      "regime": ["Legal Metrology (Packaged Commodities) Rules, 2011"],
+      "required_labels": ["material", "dimensions", "net_quantity", "mrp_incl_taxes", "packer_name_and_address", "country_of_origin"],
+      "required_licenses": [],
+      "optional_marks": [],
+      "label_template": "Material: <material>. Size: <dimensions>. Net Qty: <net_quantity>. MRP: ₹<mrp> (incl. all taxes). Marketed by: <packer_name>, <address>. Country of Origin: India.",
+      "label_overhead_inr": 4,
+      "source_url": "https://legalmetrology.gov.in/",
+      "effective_date": "2011-04-01",
+      "needs_legal_review": true,
+      "notes": "Declare genuine vs faux leather honestly to avoid returns and misbranding."
+    },
+    "ayurvedic_herbal": {
+      "label": "Ayurvedic / Herbal Products",
+      "aliases": ["herbal", "ayurvedic", "ayurveda", "herbal oil", "amla oil", "herbal powder", "kajal", "ubtan"],
+      "regime": ["Drugs and Cosmetics Act, 1940 (Ayurvedic/Siddha/Unani)", "AYUSH licensing"],
+      "required_labels": ["list_of_ingredients", "net_weight", "date_of_manufacture", "best_before", "ayush_license_number", "manufacturer_name_and_address", "batch_number", "directions_for_use"],
+      "required_licenses": ["AYUSH_manufacturing_license"],
+      "optional_marks": [],
+      "label_template": "<product_name> (Ayurvedic Proprietary). Ingredients: <ingredients>. Net Wt: <net_weight>. Mfg: <mm/yyyy>. Best Before: <duration>. Batch: <batch>. AYUSH Lic. No.: <license>. Mfd by: <name>, <address>. Directions: <use>.",
+      "label_overhead_inr": 8,
+      "source_url": "https://www.ayush.gov.in/",
+      "effective_date": "2018-01-01",
+      "needs_legal_review": true,
+      "notes": "Ayurvedic/herbal products marketed with therapeutic claims require an AYUSH manufacturing licence. Avoid unproven medical claims."
+    },
+    "candles_fragrance": {
+      "label": "Candles & Home Fragrance",
+      "aliases": ["candle", "scented candle", "wax", "diffuser", "incense", "agarbatti", "dhoop", "potpourri"],
+      "regime": ["Legal Metrology (Packaged Commodities) Rules, 2011"],
+      "required_labels": ["material", "net_weight", "burn_time_or_usage", "safety_warning", "mrp_incl_taxes", "packer_name_and_address", "country_of_origin"],
+      "required_licenses": [],
+      "optional_marks": [],
+      "label_template": "<product_name>. Material: <wax_type>. Net Wt: <net_weight>. Burn time: <hours>. Warning: never leave a burning candle unattended. MRP: ₹<mrp> (incl. all taxes). Made by: <packer_name>, <address>. Country of Origin: India.",
+      "label_overhead_inr": 4,
+      "source_url": "https://legalmetrology.gov.in/",
+      "effective_date": "2011-04-01",
+      "needs_legal_review": true,
+      "notes": "Include a fire-safety warning. No special licence for basic sale."
+    },
+    "stationery_paper": {
+      "label": "Stationery & Paper Crafts",
+      "aliases": ["diary", "notebook", "handmade paper", "greeting card", "bookmark", "journal", "gift wrap", "envelope"],
+      "regime": ["Legal Metrology (Packaged Commodities) Rules, 2011"],
+      "required_labels": ["material", "net_quantity", "dimensions", "mrp_incl_taxes", "packer_name_and_address", "country_of_origin"],
+      "required_licenses": [],
+      "optional_marks": ["Handmade Paper mark (if certified)"],
+      "label_template": "<product_name>. Material: <material>. Size: <dimensions>. Net Qty: <net_quantity>. MRP: ₹<mrp> (incl. all taxes). Made by: <packer_name>, <address>. Country of Origin: India.",
+      "label_overhead_inr": 3,
+      "source_url": "https://legalmetrology.gov.in/",
+      "effective_date": "2011-04-01",
+      "needs_legal_review": true,
+      "notes": "Standard pre-packaged labelling applies."
     }
   }
 }

@@ -16,7 +16,14 @@ export type RecorderHandle = {
 
 export async function startRecording(): Promise<RecorderHandle> {
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+    audio: {
+      channelCount: 1,
+      echoCancellation: true,
+      noiseSuppression: true,
+      // Levels a soft-spoken seller held far from the phone up to a usable volume,
+      // and reins in a shouted one — key for noisy, uneven field recordings.
+      autoGainControl: true,
+    },
   });
 
   const mime = pickMimeType();

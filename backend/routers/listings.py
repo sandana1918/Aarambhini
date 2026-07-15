@@ -55,6 +55,8 @@ async def run_listing(
         "seller_id": ObjectId(seller_id) if seller_id else None,
         "status": result.get("status"),
         "suno": result.get("suno"),
+        "product_attributes": result.get("product_attributes"),
+        "missing_attributes": result.get("missing_attributes", []),
         "listing": result.get("listing"),
         "price": result.get("price"),
         "compliance": result.get("compliance"),

@@ -1,7 +1,14 @@
-category,typical_low_inr,typical_high_inr,platform_fee_pct,shipping_flat_inr,fragile,perishable,notes
-handloom_textiles,150,600,0,40,false,false,zero-commission marketplace; light weight
-food,80,400,0,50,false,true,perishable; regional fulfilment advised
-jewellery_precious,2000,50000,0,60,true,false,high value; insured shipping
-imitation_jewellery,100,800,0,40,false,false,fashion jewellery
-cosmetics_soap,60,500,0,45,false,false,weight-based shipping
-handicrafts_decor,120,1500,0,60,true,false,fragile; protective packing
+category,region,typical_low_inr,typical_high_inr,platform_fee_pct,shipping_flat_inr,fragile,perishable,packaging_overhead_inr,notes
+handloom_textiles,IN,150,600,0,40,false,false,5,zero-commission marketplace; light weight
+apparel_readymade,IN,150,800,0,45,false,false,5,size-driven returns; weight-based shipping
+food_packaged,IN,80,400,0,50,false,true,8,perishable; regional fulfilment advised
+jewellery_precious,IN,2000,50000,0,60,true,false,10,high value; insured shipping
+imitation_jewellery,IN,100,800,0,40,false,false,4,fashion jewellery
+cosmetics_handmade,IN,60,500,0,45,false,false,7,weight-based shipping; leak-proof
+handicrafts_decor,IN,120,1500,0,60,true,false,5,fragile; protective packing
+home_furnishing,IN,200,1800,0,60,false,false,5,bulky; dimension-driven returns
+toys_games,IN,120,1200,0,50,false,false,6,safety-labelled; some fragile
+bags_leather,IN,150,1500,0,55,false,false,5,check genuine vs faux leather
+ayurvedic_herbal,IN,80,700,0,50,false,false,7,shelf-life sensitive
+candles_fragrance,IN,80,800,0,50,true,false,5,fragile wax; melt-safe packing
+stationery_paper,IN,40,400,0,40,false,false,3,light weight

@@ -54,21 +54,36 @@ def _fallback(voice_text, image):
     quantity = nums[0] if nums else None
     cost = nums[-1] if nums else None
     photo_ok, photo_issue = _photo_quality(image)
+    # Keys must match the canonical taxonomy in data/compliance_rules.json.
     name_by_category = {
         "handloom_textiles": "handwoven jute bag",
-        "food": "homemade food product",
+        "apparel_readymade": "readymade garment",
+        "food_packaged": "homemade food product",
         "jewellery_precious": "precious jewellery",
         "imitation_jewellery": "imitation jewellery",
-        "cosmetics_soap": "handmade soap",
+        "cosmetics_handmade": "handmade soap",
         "handicrafts_decor": "handmade decor item",
+        "home_furnishing": "home furnishing item",
+        "toys_games": "handmade toy",
+        "bags_leather": "handmade bag",
+        "ayurvedic_herbal": "herbal product",
+        "candles_fragrance": "handmade candle",
+        "stationery_paper": "handmade paper product",
     }
     material_by_category = {
         "handloom_textiles": "jute",
-        "food": None,
+        "apparel_readymade": "cotton",
+        "food_packaged": None,
         "jewellery_precious": "precious metal",
         "imitation_jewellery": "mixed material",
-        "cosmetics_soap": None,
+        "cosmetics_handmade": None,
         "handicrafts_decor": "terracotta or craft material",
+        "home_furnishing": "cotton",
+        "toys_games": "wood",
+        "bags_leather": "jute",
+        "ayurvedic_herbal": None,
+        "candles_fragrance": "wax",
+        "stationery_paper": "handmade paper",
     }
     detected_language = "hi" if re.search(r"[\u0900-\u097F]", voice_text) else "en"
     return {

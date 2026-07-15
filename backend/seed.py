@@ -15,7 +15,8 @@ from datetime import datetime, timezone
 
 from .models import ComplianceRule, PriceBenchmark, SellerCreate
 
-_DATA = os.path.join(os.path.dirname(__file__), "data")
+# Single source of truth: the repo-root data/ the agents also read.
+_DATA = os.path.join(os.path.dirname(__file__), "..", "data")
 
 # A few realistic SHG sellers so the seller_id flow is demonstrable out of the box.
 # Kept small and clearly synthetic — phone numbers use the reserved 999xxxxxxx range.

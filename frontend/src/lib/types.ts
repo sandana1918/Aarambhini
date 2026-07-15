@@ -62,11 +62,15 @@ export type Packaging = {
 
 export type Approval = { type: string; summary: string };
 
+export type ProductAttributes = Record<string, string | number | string[] | null>;
+
 export type RunResult = {
   id: string;
   status: 'ready_for_approval' | 'needs_retake' | 'published' | 'rejected_by_seller' | string;
   reason?: string | null;
   suno?: Suno;
+  product_attributes?: ProductAttributes | null;
+  missing_attributes?: string[];
   listing?: Listing;
   price?: Price;
   compliance?: Compliance;

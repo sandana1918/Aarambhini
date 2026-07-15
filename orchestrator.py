@@ -20,6 +20,7 @@ from typing import Annotated, Any, TypedDict
 from langgraph.graph import StateGraph, START, END
 
 from agents import suno as suno_agent
+from agents import vivran as vivran_agent
 from agents import likho as likho_agent
 from agents import daam as daam_agent
 from agents import niyam as niyam_agent
@@ -36,6 +37,8 @@ class AarambhiniState(TypedDict, total=False):
     desired_margin_pct: int
     # agent outputs
     suno: dict
+    product_attributes: dict
+    missing_attributes: list
     listing: dict
     price: dict
     compliance: dict
@@ -73,7 +76,7 @@ def _in_return_loop(state) -> bool:
 
 def _size_guide_text(state) -> str:
     cat = state.get("suno", {}).get("category", "")
-    if cat in ("handloom_textiles", "apparel", "home_furnishing"):
+    if cat in ("handloom_textiles", "apparel_readymade", "home_furnishing"):
         return ("Size & colour note: exact measurements are listed above; being handmade, "
                 "colours may vary slightly on different screens.")
     if cat in ("jewellery_precious", "imitation_jewellery"):
@@ -92,6 +95,16 @@ def suno_node(state) -> dict:
 def reject_node(state) -> dict:
     s = state["suno"]
     return {"status": "needs_retake", "reason": s.get("photo_issue") or "photo unclear"}
+
+
+def vivran_node(state) -> dict:
+    """Fill the category's Meesho-style structured attributes from words + photo."""
+    v = vivran_agent.run(state["suno"], state.get("image"))
+    return {
+        "product_attributes": v["attributes"],
+        "missing_attributes": v["missing_required"],
+        "log": [("Vivran", v)],
+    }
 
 
 def likho_node(state) -> dict:
@@ -216,6 +229,9 @@ def _build_checklist(state) -> list:
         items.append(f"Pack it: {pack.get('primary_pack')} → {pack.get('outer_pack')}")
     if state.get("return_mitigated"):
         items.append("Review the size/colour guide added to your listing")
+    missing = state.get("missing_attributes") or []
+    if missing:
+        items.append("Add these product details buyers expect: " + ", ".join(missing))
     w = state.get("returns", {}) or {}
     if w.get("needs_seller_confirmation") and w.get("confirmation_prompt"):
         items.append(w["confirmation_prompt"])
@@ -271,6 +287,7 @@ def build_graph():
     g = StateGraph(AarambhiniState)
     g.add_node("suno", suno_node)
     g.add_node("reject", reject_node)
+    g.add_node("vivran", vivran_node)
     g.add_node("likho", likho_node)
     g.add_node("review", review_node)
     g.add_node("daam", daam_node)
@@ -281,8 +298,11 @@ def build_graph():
     g.add_node("finalize", finalize_node)
 
     g.add_edge(START, "suno")
-    g.add_conditional_edges("suno", photo_gate, {"reject": "reject", "continue": "likho"})
+    g.add_conditional_edges("suno", photo_gate, {"reject": "reject", "continue": "vivran"})
     g.add_edge("reject", END)
+
+    # Structured attributes are filled once, before the copy is written.
+    g.add_edge("vivran", "likho")
 
     # Likho fans out to whichever loop it is serving.
     g.add_conditional_edges("likho", after_likho,
