@@ -43,7 +43,7 @@ with col_in:
                 try:
                     st.session_state.voice_text = transcribe_audio(
                         voice_note.getvalue(), voice_note.type or "audio/wav"
-                    )
+                    )["text"]
                     st.session_state.result = None
                     st.session_state.published = False
                     st.session_state.transcription_status = ("success", "Transcript added below.")

@@ -88,18 +88,19 @@ async def transcribe(audio: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="The recording was empty — please try again.")
 
     try:
-        text = await asyncio.to_thread(
+        result = await asyncio.to_thread(
             llm.transcribe_audio, raw, audio.content_type or "audio/wav"
         )
     except Exception as exc:  # noqa: BLE001 - report transcription failure clearly
         raise HTTPException(status_code=502, detail=f"Could not transcribe the audio: {exc}")
 
+    text = result["text"]
     if not text:
         raise HTTPException(
             status_code=422,
             detail="Couldn't make out any speech — please record again in a quiet spot.",
         )
-    return {"text": text, "detected_via": "gemini_audio"}
+    return {"text": text, "detected_via": result["provider"]}
 
 
 @router.get("/{listing_id}")

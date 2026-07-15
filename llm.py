@@ -70,8 +70,33 @@ def llm(prompt, image=None, rate_limit_retries=1):
             raise
 
 
-def transcribe_audio(audio_bytes, mime_type="audio/wav"):
-    """Transcribe a seller voice note into text for the same agent pipeline."""
+_STT_PROVIDER = os.getenv("STT_PROVIDER", "gemini").lower()
+_SARVAM_API_KEY = os.getenv("SARVAM_API_KEY")
+_SARVAM_MODEL = os.getenv("SARVAM_STT_MODEL", "saarika:v2.5")
+_SARVAM_URL = "https://api.sarvam.ai/speech-to-text"
+
+
+def _transcribe_sarvam(audio_bytes, mime_type):
+    """Sarvam Saarika STT — India-first, tuned for regional + code-mixed, noisy phone audio.
+
+    Audio arrives as 16 kHz mono WAV (normalized in the browser), which Saarika
+    accepts directly. language_code='unknown' lets Saarika auto-detect the language.
+    """
+    import requests
+
+    resp = requests.post(
+        _SARVAM_URL,
+        headers={"api-subscription-key": _SARVAM_API_KEY},
+        files={"file": ("voice-note.wav", audio_bytes, mime_type or "audio/wav")},
+        data={"model": _SARVAM_MODEL, "language_code": "unknown"},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return (resp.json().get("transcript") or "").strip()
+
+
+def _transcribe_gemini(audio_bytes, mime_type):
+    """Gemini native audio — the fallback provider."""
     client = _get_client()
     from google.genai import types
 
@@ -84,6 +109,27 @@ def transcribe_audio(audio_bytes, mime_type="audio/wav"):
     audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
     resp = client.models.generate_content(model=_MODEL_NAME, contents=[prompt, audio_part])
     return (resp.text or "").strip()
+
+
+def transcribe_audio(audio_bytes, mime_type="audio/wav"):
+    """Transcribe a seller voice note into text for the same agent pipeline.
+
+    Sarvam is primary (best for Indian regional + code-mixed, noisy field audio);
+    Gemini is the automatic fallback so a Sarvam outage never breaks the flow.
+    Set STT_PROVIDER=gemini to skip Sarvam entirely.
+
+    Returns {"text": str, "provider": "sarvam" | "gemini" | "gemini_after_sarvam_error"}.
+    """
+    use_sarvam = _STT_PROVIDER == "sarvam" and _SARVAM_API_KEY
+    if use_sarvam:
+        try:
+            return {"text": _transcribe_sarvam(audio_bytes, mime_type), "provider": "sarvam"}
+        except Exception:  # noqa: BLE001 - fall back to Gemini on any Sarvam failure
+            return {
+                "text": _transcribe_gemini(audio_bytes, mime_type),
+                "provider": "gemini_after_sarvam_error",
+            }
+    return {"text": _transcribe_gemini(audio_bytes, mime_type), "provider": "gemini"}
 
 
 def _extract_json(text):

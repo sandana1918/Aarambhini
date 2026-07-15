@@ -39,9 +39,10 @@ flowchart TB
         PACK["Packaging 📦"]
     end
 
-    subgraph llm["🧠 LLM layer (llm.py)"]
+    subgraph llm["🧠 LLM & STT layer (llm.py)"]
         GEM["Google Gemini<br/>gemini-flash-latest"]
-        STT["transcribe_audio()<br/>native audio, 22 langs"]
+        STT["transcribe_audio()"]
+        SARV["Sarvam Saarika<br/>saarika:v2.5 · primary"]
     end
 
     subgraph data["🗄️ MongoDB Atlas (backend/db.py)"]
@@ -56,6 +57,8 @@ flowchart TB
     SELL --> REC
     REC -->|WAV| R1
     R1 --> STT
+    STT -->|primary| SARV
+    STT -.fallback.-> GEM
     SELL -->|voice_text + photo| R2
     SELL --> TL
     R2 --> MUK
@@ -67,7 +70,6 @@ flowchart TB
     LIKHO --> GEM
     NIYAM --> GEM
     WAPSI --> GEM
-    STT --> GEM
 
     SUNO -. reads .-> C3
     NIYAM -. reads .-> C3
@@ -263,6 +265,7 @@ sequenceDiagram
     participant UI as Next.js /sell
     participant API as FastAPI
     participant STT as llm.transcribe_audio
+    participant SARV as Sarvam Saarika
     participant ORCH as LangGraph crew
     participant GEM as Gemini
     participant DB as Atlas
@@ -271,8 +274,9 @@ sequenceDiagram
     UI->>UI: MediaRecorder → decode → 16kHz mono WAV
     UI->>API: POST /listings/transcribe (WAV)
     API->>STT: transcribe_audio(bytes)
-    STT->>GEM: audio + prompt
-    GEM-->>UI: transcript (fills textarea)
+    STT->>SARV: audio (primary)
+    Note over STT,GEM: on Sarvam error → Gemini native audio
+    SARV-->>UI: transcript (fills textarea)
 
     Seller->>UI: add photo, set margin, "Run Aarambhini"
     UI->>API: POST /listings/run (voice_text + photo)
@@ -353,28 +357,48 @@ The quality rubric is intentionally deterministic: title 8–120 chars, descript
 
 ## 6. Speech-to-Text — model choice & alternatives
 
-**Shipped:** Google **Gemini** (`gemini-flash-latest`) via
-`llm.transcribe_audio()`, exposed at `POST /listings/transcribe`. Audio is
-captured in-browser and normalized to **16 kHz mono WAV** (`frontend/src/lib/recorder.ts`)
-before upload, so the same endpoint works across browsers and STT providers.
+**Shipped:** **Sarvam AI — Saarika** (`saarika:v2.5`) as primary, with **Google
+Gemini** native audio as an automatic fallback. Both live behind
+`llm.transcribe_audio()` and are exposed at `POST /listings/transcribe`. Audio is
+captured in-browser and normalized to **16 kHz mono WAV**
+(`frontend/src/lib/recorder.ts`) before upload, so one endpoint feeds either
+provider unchanged.
 
-Why Gemini for the prototype:
-- Already the project's LLM — **one dependency, one API key, one seam**.
-- Native multimodal audio: **22 Indian languages** with code-mixing, no separate
-  ASR service to host, and free-tier friendly for a hackathon.
-- The transcript flows straight into the *same* agent pipeline as typed input.
+Provider selection (env-driven, `llm.py`):
 
-Production alternatives (swap inside `transcribe_audio()` only):
+```
+STT_PROVIDER=sarvam        # sarvam (default) | gemini
+SARVAM_API_KEY=…           # required for the Sarvam path
+SARVAM_STT_MODEL=saarika:v2.5
+```
+
+`transcribe_audio()` returns `{"text", "provider"}` where `provider` is
+`sarvam`, `gemini`, or `gemini_after_sarvam_error` — so the response is honest
+about which engine actually ran.
+
+Why **Sarvam** is primary:
+- **India-first ASR** — strongest on the regional languages our sellers actually
+  speak (the demo includes an Odia seller) and on **code-mixed** speech
+  (Hinglish/Tamlish), which is how rural sellers talk.
+- Trained on **noisy Indian phone audio** — it addresses background disturbance
+  by domain match, not a generic denoiser.
+- Auto-detects language (`language_code=unknown`), generous hackathon credits.
+
+Why **Gemini** stays as fallback:
+- Already the project's LLM (one key already present); a Sarvam outage or credit
+  exhaustion never breaks a live demo.
+
+Other options (swap inside `transcribe_audio()` only):
 
 | Option | Why consider | Trade-off |
 |---|---|---|
-| **Bhashini (ULCA / govt. of India)** | Purpose-built for 22 scheduled Indian languages; aligns with a Bharat-first, public-good product | Per-language endpoints; more integration surface |
-| **Sarvam AI (Saarika)** | India-first ASR tuned for code-mixed Hindi-English; strong on regional accents | Paid; another vendor |
-| **OpenAI Whisper (self-host `large-v3`)** | No per-call cost, offline/on-prem, good multilingual | GPU to run; heavier ops |
+| **Bhashini (ULCA / govt. of India)** | Free, all 22 scheduled languages; most Bharat-aligned public-good option | Per-language endpoints; more integration surface |
+| **AssemblyAI** | World-class generic noise filtration + audio intelligence | Narrower Indian *regional*-language coverage |
+| **OpenAI Whisper (self-host `large-v3`)** | No per-call cost, offline/on-prem | GPU to run; heavier ops |
 | **AI4Bharat IndicWhisper** | Open weights fine-tuned on Indian languages | Self-hosting + maintenance |
 
-Because everything is normalized to WAV and isolated behind one function, moving
-to Bhashini/Sarvam later touches **only `llm.py`** — no API, agent, or UI change.
+Because everything is normalized to WAV and isolated behind one function,
+changing providers touches **only `llm.py`** — no API, agent, or UI change.
 
 ---
 
