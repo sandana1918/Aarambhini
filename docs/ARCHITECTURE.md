@@ -304,7 +304,7 @@ sequenceDiagram
     SARV-->>UI: transcript (fills textarea)
 
     Seller->>UI: add photo, set margin, "Run Aarambhini"
-    UI->>API: POST /listings/run (voice_text + photo)
+    UI->>API: POST /listings/run/stream (SSE — agents stream in live)
     API->>DB: store photo in GridFS → image_ref
     API->>ORCH: orchestrator.run(text, image_ref, margin, thread_id)
 
@@ -462,7 +462,9 @@ Aarambhini/
 │  ├─ db.py               # Atlas (Motor) + collections + indexes
 │  ├─ models.py           # Pydantic schemas
 │  ├─ seed.py             # seed rules + benchmarks + demo sellers
-│  └─ routers/            # listings (run/transcribe/approve), sellers, rules
+│  └─ routers/            # listings (run · run/stream · transcribe · clarify ·
+│                         #   approve), sellers, rules
+├─ graph_store.py         # sync pymongo: MongoDBSaver checkpointer + GridFS images
 ├─ data/                  # single source of truth, read by agents AND seed:
 │                         #   compliance_rules.json, price_benchmarks.csv,
 │                         #   listing_attributes.json (Meesho field specs)
