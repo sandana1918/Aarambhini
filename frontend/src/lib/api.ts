@@ -39,15 +39,23 @@ export async function transcribeAudio(audio: Blob): Promise<{ text: string }> {
   return json<{ text: string }>(res);
 }
 
+export type ApprovalEdits = {
+  price?: number;
+  title?: string;
+  description?: string;
+  attributes?: Record<string, string>;
+};
+
 export async function approveListing(
   id: string,
   approved: boolean,
   notes?: string,
+  edits?: ApprovalEdits,
 ): Promise<{ id: string; status: string }> {
   const res = await fetch(`${API_BASE}/listings/${id}/approve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ approved, notes: notes ?? null }),
+    body: JSON.stringify({ approved, notes: notes ?? null, edits: edits ?? null }),
   });
   return json(res);
 }

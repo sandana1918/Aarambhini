@@ -26,6 +26,10 @@ export default function SellPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RunResult | null>(null);
   const [published, setPublished] = useState(false);
+  const [rejected, setRejected] = useState(false);
+  const [editPrice, setEditPrice] = useState<string>('');
+  const [notes, setNotes] = useState('');
+  const [approving, setApproving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function pickPhoto(f: File | null) {
@@ -38,6 +42,9 @@ export default function SellPage() {
     setError(null);
     setResult(null);
     setPublished(false);
+    setRejected(false);
+    setNotes('');
+    setEditPrice('');
     try {
       const r = await runListing({ voiceText, marginPct: margin, photo });
       setResult(r);
@@ -48,13 +55,45 @@ export default function SellPage() {
     }
   }
 
+  function buildEdits() {
+    const edits: { price?: number } = {};
+    const p = Number(editPrice);
+    if (editPrice.trim() && Number.isFinite(p) && p > 0 && p !== result?.price?.selling_price_inr) {
+      edits.price = Math.round(p);
+    }
+    return Object.keys(edits).length ? edits : undefined;
+  }
+
   async function onApprove() {
     if (!result) return;
+    setApproving(true);
+    setError(null);
+    const edits = buildEdits();
     try {
-      await approveListing(result.id, true);
+      await approveListing(result.id, true, notes || undefined, edits);
+      // Reflect the published price (possibly edited) in the confirmation.
+      if (edits?.price && result.price) {
+        setResult({ ...result, price: { ...result.price, selling_price_inr: edits.price } });
+      }
       setPublished(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not publish.');
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function onReject() {
+    if (!result) return;
+    setApproving(true);
+    setError(null);
+    try {
+      await approveListing(result.id, false, notes || undefined);
+      setRejected(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not reject.');
+    } finally {
+      setApproving(false);
     }
   }
 
@@ -405,13 +444,31 @@ export default function SellPage() {
                         Create another listing
                       </Link>
                     </div>
+                  ) : rejected ? (
+                    <div className="text-center">
+                      <span className="text-3xl">✋</span>
+                      <p className="mt-3 text-[16px] font-bold text-ink">Not published</p>
+                      <p className="mt-1.5 text-[13px] text-ink-2">
+                        You rejected this listing. Nothing went live.
+                      </p>
+                      <Link
+                        href="/sell"
+                        onClick={() => {
+                          setResult(null);
+                          setRejected(false);
+                        }}
+                        className="mt-5 inline-block rounded-xl border border-line bg-surface px-5 py-2.5 text-[13px] font-semibold text-ink-2 transition hover:border-brand-200"
+                      >
+                        Start over
+                      </Link>
+                    </div>
                   ) : (
                     <>
                       <p className="text-[14px] font-bold text-ink">
                         Nothing goes live without your tap
                       </p>
                       <p className="mt-1 text-[12px] text-muted">
-                        Please confirm each of these before publishing.
+                        Review, edit anything, then publish — or reject.
                       </p>
                       <ul className="mt-4 space-y-2">
                         {result.approvals?.map((a) => (
@@ -424,12 +481,45 @@ export default function SellPage() {
                           </li>
                         ))}
                       </ul>
-                      <button
-                        onClick={onApprove}
-                        className="mt-5 w-full rounded-xl bg-brand py-3.5 text-[15px] font-semibold text-white shadow-lg shadow-brand/25 transition hover:bg-brand-600 active:scale-[0.99]"
-                      >
-                        Approve &amp; publish
-                      </button>
+
+                      {/* Seller edits — resumed into the graph via Command(resume) */}
+                      <div className="mt-4 grid gap-3 rounded-xl border border-line bg-canvas p-3.5">
+                        <label className="flex items-center justify-between text-[12px] font-semibold text-ink-2">
+                          Adjust price (₹)
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            value={editPrice}
+                            onChange={(e) => setEditPrice(e.target.value)}
+                            placeholder={String(result.price?.selling_price_inr ?? '')}
+                            className="w-28 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-right text-[13px] text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand-100"
+                          />
+                        </label>
+                        <input
+                          type="text"
+                          value={notes}
+                          onChange={(e) => setNotes(e.target.value)}
+                          placeholder="Add a note (optional)"
+                          className="w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand-100"
+                        />
+                      </div>
+
+                      <div className="mt-4 flex gap-2.5">
+                        <button
+                          onClick={onApprove}
+                          disabled={approving}
+                          className="flex-1 rounded-xl bg-brand py-3.5 text-[15px] font-semibold text-white shadow-lg shadow-brand/25 transition hover:bg-brand-600 active:scale-[0.99] disabled:opacity-60"
+                        >
+                          {approving ? 'Publishing…' : buildEdits() ? 'Publish with changes' : 'Approve & publish'}
+                        </button>
+                        <button
+                          onClick={onReject}
+                          disabled={approving}
+                          className="rounded-xl border border-line bg-surface px-5 py-3.5 text-[15px] font-semibold text-ink-2 transition hover:border-danger/40 hover:text-danger disabled:opacity-60"
+                        >
+                          Reject
+                        </button>
+                      </div>
                     </>
                   )}
                 </section>
