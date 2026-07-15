@@ -269,9 +269,16 @@ erDiagram
 | `image_fingerprints` | `phash`, `seller_id` | duplicate/stock-photo detection (authenticity gate) |
 | `audit_log` | `(listing_id, ts desc)` | tamper-evident approval trail |
 
-**Seed state** (`python -m backend.seed`): 13 compliance rules, 13 price
-benchmarks, 3 demo SHG sellers (Hindi / Tamil / Odia). Idempotent — upserts by
-natural key, so re-running refreshes rather than duplicates.
+**Seed** — two levels, both idempotent:
+- `python -m backend.seed` — reference data only: 13 compliance rules, 13 price
+  benchmarks, 3 demo SHG sellers.
+- `python -m backend.seed_demo` — a full realistic marketplace: 7 SHG women
+  across states/languages, 10 listings across 8 categories (incl. the
+  licence-bearing ones — food/FSSAI, cosmetics, ayurvedic/AYUSH, toys/BIS),
+  a distinct GridFS photo + pHash fingerprint per listing, and an
+  `approve_publish` audit entry per published listing. Prices come from the real
+  Daam agent and packing plans from Packaging, so the numbers stay consistent
+  with the live pipeline. Resets the transactional collections, then refills.
 
 **LangGraph-managed collections** (not in the ER above; created/owned by the
 framework and `graph_store.py`):
