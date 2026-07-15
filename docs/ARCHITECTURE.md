@@ -94,9 +94,16 @@ flowchart TB
 - **Reference data is seeded, not hardcoded.** `compliance_rules` and
   `price_benchmarks` live in Atlas (and mirror JSON/CSV in `data/`), so rules
   evolve without code changes.
-- **Nothing publishes without a human.** `/run` only ever produces
-  `ready_for_approval`; `status: published` is reachable *only* through
-  `/approve`, which also writes an `audit_log` row.
+- **Nothing publishes without a human — as a real graph interrupt.** `/run` runs
+  the crew until the `approval` node calls `interrupt()`, which **pauses the graph
+  with its state checkpointed to MongoDB**. `/approve` resumes the *same* run by
+  `thread_id` via `Command(resume=decision)`, so the seller can approve, reject,
+  or **edit-then-publish** (price / title / attributes) in one step, and the run
+  survives a server restart. Every decision writes an `audit_log` row.
+- **Durable by default.** The graph compiles with a `MongoDBSaver` checkpointer;
+  every node's state is persisted, so interrupted or failed runs resume from the
+  last successful node. The product photo lives in **GridFS** (a live `PIL.Image`
+  can't be checkpointed) — only a string `image_ref` travels through state.
 
 ---
 
@@ -130,7 +137,8 @@ flowchart TD
     RR -->|high risk| LIKHO
     RR -->|acceptable| FINAL
 
-    FINAL --> ENDF([END])
+    FINAL --> APPROVAL["approval<br/>interrupt() — PAUSES here,<br/>state checkpointed to Mongo"]
+    APPROVAL -->|"resume: publish / reject / edit"| ENDF([END])
 
     linkStyle 8 stroke:#f43397,stroke-width:2px;
     linkStyle 11 stroke:#dc2626,stroke-width:2px;
@@ -180,6 +188,9 @@ erDiagram
     listings {
         ObjectId _id PK
         ObjectId seller_id FK "indexed, nullable"
+        string thread_id "LangGraph checkpoint id — resumes the run"
+        string image_ref "GridFS id of the product photo"
+        string seller_notes "note left at approval, nullable"
         string status "ready_for_approval|needs_retake|published|rejected_by_seller"
         object suno "intake facts + photo verdict"
         object product_attributes "Meesho fields: gender, size, colour, fabric…"
@@ -256,6 +267,14 @@ erDiagram
 benchmarks, 3 demo SHG sellers (Hindi / Tamil / Odia). Idempotent — upserts by
 natural key, so re-running refreshes rather than duplicates.
 
+**LangGraph-managed collections** (not in the ER above; created/owned by the
+framework and `graph_store.py`):
+
+| Collection | Owner | Holds |
+|---|---|---|
+| `checkpoints`, `checkpoint_writes` | `MongoDBSaver` | per-node state snapshots keyed by `thread_id` — the basis for pause/resume and fault recovery |
+| `product_images.files/.chunks` | GridFS | uploaded product photos; `listings.image_ref` points here |
+
 ---
 
 ## 4. Request sequence — voice note to published listing
@@ -282,16 +301,22 @@ sequenceDiagram
 
     Seller->>UI: add photo, set margin, "Run Aarambhini"
     UI->>API: POST /listings/run (voice_text + photo)
-    API->>ORCH: orchestrator.run(text, image, margin)
+    API->>DB: store photo in GridFS → image_ref
+    API->>ORCH: orchestrator.run(text, image_ref, margin, thread_id)
 
     Note over ORCH,GEM: Suno → (loops: Quality / Compliance / Returns) → Packaging → Wapsi → finalize
-    ORCH-->>API: status=ready_for_approval + full activity_log
-    API->>DB: insert listings doc
+    ORCH->>DB: checkpoint each node's state (thread_id)
+    Note over ORCH: approval node calls interrupt() — graph PAUSES
+    ORCH-->>API: status=ready_for_approval + activity_log
+    API->>DB: insert listings doc (thread_id, image_ref)
     API-->>UI: listing + price + compliance + returns + timeline
 
-    Seller->>UI: review, tap "Approve & publish"
-    UI->>API: POST /listings/{id}/approve
-    API->>DB: status→published, insert audit_log
+    Seller->>UI: review, optionally edit price, "Publish"
+    UI->>API: POST /listings/{id}/approve {approved, notes, edits}
+    API->>ORCH: resume(thread_id, decision) — Command(resume)
+    ORCH->>ORCH: apply edits, set status, → END
+    ORCH-->>API: final state (published + edits)
+    API->>DB: update listing + insert audit_log
     API-->>UI: {status: published}
     UI-->>Seller: 🎉 live at ₹N
 ```
