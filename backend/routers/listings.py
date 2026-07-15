@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 
 from ..db import get_db, LISTINGS, AUDIT_LOG
-from ..models import ApprovalDecision, ClarificationAnswers
+from ..models import ApprovalDecision, ClarificationAnswers, ReturnReport
 
 router = APIRouter(prefix="/listings", tags=["listings"])
 
@@ -258,6 +258,31 @@ async def transcribe(audio: UploadFile = File(...)):
             detail="Couldn't make out any speech — please record again in a quiet spot.",
         )
     return {"text": text, "detected_via": result["provider"]}
+
+
+@router.post("/{listing_id}/return")
+async def report_return(listing_id: str, report: ReturnReport):
+    """Log a real buyer return. This feeds Wapsi — future listings in the same
+    category are forecast from this accumulating history, not just reasoning.
+    """
+    import graph_store
+
+    db = get_db()
+    doc = await db[LISTINGS].find_one({"_id": ObjectId(listing_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Listing not found")
+
+    category = (doc.get("suno") or {}).get("category") or (doc.get("listing") or {}).get("category")
+    await asyncio.to_thread(
+        graph_store.record_return_event,
+        ObjectId(listing_id),
+        doc.get("seller_id"),
+        category,
+        report.reason,
+        report.notes,
+        doc.get("product_attributes"),
+    )
+    return {"listing_id": listing_id, "recorded": True, "reason": report.reason, "category": category}
 
 
 @router.get("/{listing_id}")

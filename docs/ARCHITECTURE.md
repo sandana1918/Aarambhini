@@ -287,6 +287,7 @@ framework and `graph_store.py`):
 |---|---|---|
 | `checkpoints`, `checkpoint_writes` | `MongoDBSaver` | per-node state snapshots keyed by `thread_id` — the basis for pause/resume and fault recovery |
 | `product_images.files/.chunks` | GridFS | uploaded product photos; `listings.image_ref` points here |
+| `return_events` | `graph_store` | real buyer returns (category, reason) — Wapsi's learning data, logged via `POST /listings/{id}/return` |
 
 ---
 
@@ -391,12 +392,19 @@ The quality rubric is intentionally deterministic: title 8–120 chars, descript
   appended the text and Daam has absorbed the overhead. Missing *licenses*
   (FSSAI/BIS/AYUSH) are surfaced as warnings, never auto-obtained.
 
-### Wapsi — the Returns Guard · `agents/wapsi.py` · **LLM**
-- **In:** product name, category, attributes.
-- **Out:** `top_return_reason, risk_level (low|medium|high), mitigations[], needs_seller_confirmation, confirmation_prompt`.
-- **Honesty rule:** it *reasons* about likely return drivers from general Indian
-  e-commerce knowledge — it does **not** query any marketplace's private return
-  data. High risk or an uncertain attribute triggers loop #3.
+### Wapsi — the Returns Guard · `agents/wapsi.py` · **LLM + learns from returns**
+- **In:** product name, category, attributes, and the category's **real return
+  history** (aggregated from `return_events` via `graph_store.return_stats`).
+- **Out:** `top_return_reason, risk_level (low|medium|high), mitigations[],
+  needs_seller_confirmation, confirmation_prompt, learned_from_returns`.
+- **It genuinely learns.** When a category has ≥3 logged returns, Wapsi grounds
+  the forecast on that distribution (e.g. décor → 85% *damaged* → high risk +
+  fragile-packing mitigations), weighting real data above general reasoning; with
+  no history it reasons from category patterns. Returns are logged via
+  `POST /listings/{id}/return`, so each real return improves later forecasts.
+- **Honesty rule:** it only uses returns logged on **Aarambhini itself** — never
+  another marketplace's private data. High risk or an uncertain attribute
+  triggers loop #3.
 
 ### Packaging · `agents/packaging.py` · **Det.**
 - Reads `fragile` / `perishable` flags from `price_benchmarks` (same table as

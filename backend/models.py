@@ -63,6 +63,16 @@ class ClarificationAnswers(BaseModel):
     cost_price_inr: Optional[int] = None
 
 
+class ReturnReport(BaseModel):
+    """A real buyer return, logged so Wapsi learns from it.
+
+    reason should be one of: size_mismatch, colour_mismatch, damaged,
+    quality_issue, not_as_described, late_or_lost, other.
+    """
+    reason: str
+    notes: Optional[str] = None
+
+
 class ComplianceRule(BaseModel):
     category: str
     label: str = ""

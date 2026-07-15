@@ -308,7 +308,7 @@ async def seed_demo(keep_existing=False):
     await ensure_indexes()
 
     if not keep_existing:
-        for c in [LISTINGS, AUDIT_LOG, IMAGE_FINGERPRINTS,
+        for c in [LISTINGS, AUDIT_LOG, IMAGE_FINGERPRINTS, "return_events",
                   "checkpoints", "checkpoint_writes",
                   "product_images.files", "product_images.chunks"]:
             await db[c].delete_many({})
@@ -338,6 +338,7 @@ async def seed_demo(keep_existing=False):
         sellers_by_phone[s["phone"]] = s
 
     n_pub = 0
+    cat_listing = {}  # category -> a listing id, to attach return events to
     for i, p in enumerate(PRODUCTS):
         seller_doc = sellers_by_phone.get(p["seller"])
         seller = next(s for s in SELLERS if s["phone"] == p["seller"])
@@ -409,6 +410,7 @@ async def seed_demo(keep_existing=False):
             "_seed": True,
         }
         res = await db[LISTINGS].insert_one(doc)
+        cat_listing[p["category"]] = res.inserted_id
 
         if p["status"] == "published":
             n_pub += 1
@@ -418,8 +420,40 @@ async def seed_demo(keep_existing=False):
                 "ts": created + timedelta(minutes=4),
             })
 
+    # Historical returns so Wapsi has real data to learn from immediately. Realistic
+    # per-category reason distributions (decor breaks; furnishing = size; food damaged).
+    return_history = {
+        "handloom_textiles": {"colour_mismatch": 6, "size_mismatch": 3, "damaged": 1},
+        "food_packaged": {"damaged": 9, "not_as_described": 4, "late_or_lost": 2},
+        "imitation_jewellery": {"not_as_described": 4, "size_mismatch": 3, "damaged": 2},
+        "handicrafts_decor": {"damaged": 11, "not_as_described": 2},
+        "cosmetics_handmade": {"not_as_described": 2, "quality_issue": 1},
+        "home_furnishing": {"size_mismatch": 7, "colour_mismatch": 4, "damaged": 1},
+        "candles_fragrance": {"damaged": 5, "not_as_described": 3},
+        "ayurvedic_herbal": {"not_as_described": 2},
+        "toys_games": {"size_mismatch": 1, "damaged": 1},
+    }
+    events, day = [], 0
+    for category, reasons in return_history.items():
+        listing_id = cat_listing.get(category)
+        for reason, count in reasons.items():
+            for _ in range(count):
+                day += 1
+                events.append({
+                    "listing_id": listing_id,
+                    "seller_id": None,
+                    "category": category,
+                    "reason": reason,
+                    "notes": None,
+                    "attributes": {},
+                    "created_at": now - timedelta(days=(day % 60)),
+                })
+    if events:
+        await db["return_events"].insert_many(events)
+
     print(f"Seeded {len(PRODUCTS)} listings ({n_pub} published), "
-          f"{len(PRODUCTS)} image fingerprints, {n_pub} audit entries.")
+          f"{len(PRODUCTS)} image fingerprints, {n_pub} audit entries, "
+          f"{len(events)} return events.")
     print("Collections now filled:")
     for c in ["sellers", "listings", "compliance_rules", "price_benchmarks",
               "image_fingerprints", "audit_log", "product_images.files"]:

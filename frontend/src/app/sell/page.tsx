@@ -497,6 +497,16 @@ export default function SellPage() {
                     <p className="mt-3 text-[12px] leading-relaxed text-ink-2">
                       {result.returns?.top_return_reason}
                     </p>
+                    {result.returns?.learned_from_returns ? (
+                      <p className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-brand-50 px-2 py-1 text-[10.5px] font-medium text-brand-700">
+                        <Icon name="refresh" size={11} />
+                        Learned from {result.returns.learned_from_returns} past returns in this category
+                      </p>
+                    ) : (
+                      <p className="mt-2.5 text-[10.5px] text-muted">
+                        No return history yet — reasoned from category patterns.
+                      </p>
+                    )}
                   </div>
 
                   <div className="card p-5">

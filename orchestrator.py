@@ -302,7 +302,12 @@ def packaging_node(state) -> dict:
 
 def wapsi_node(state) -> dict:
     s = state["suno"]
-    w = wapsi_agent.run(s.get("product_name"), s.get("category"), s.get("attributes", {}))
+    # Wapsi learns from this category's real return history.
+    try:
+        history = graph_store.return_stats(s.get("category"))
+    except Exception:  # noqa: BLE001 - never block the forecast on a stats read
+        history = None
+    w = wapsi_agent.run(s.get("product_name"), s.get("category"), s.get("attributes", {}), history)
     return {"returns": w, "log": [("Wapsi", w)]}
 
 

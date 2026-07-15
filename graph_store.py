@@ -137,3 +137,45 @@ def check_and_store_fingerprint(image, seller_id, image_ref, threshold: int = 6)
         "cross_seller": cross_seller,
         "duplicate_of_seller": str(dup["seller_id"]) if dup and dup.get("seller_id") else None,
     }
+
+
+# ------------------------------------------------- returns feedback (Wapsi learns)
+# Canonical return reasons, so history aggregates cleanly.
+RETURN_REASONS = ("size_mismatch", "colour_mismatch", "damaged", "quality_issue",
+                  "not_as_described", "late_or_lost", "other")
+
+
+def record_return_event(listing_id, seller_id, category, reason, notes=None, attributes=None):
+    """Log a real buyer return — this is what Wapsi learns from over time."""
+    from datetime import datetime, timezone
+
+    _get_client()[_DB_NAME]["return_events"].insert_one({
+        "listing_id": listing_id,
+        "seller_id": seller_id,
+        "category": category,
+        "reason": reason if reason in RETURN_REASONS else "other",
+        "notes": notes,
+        "attributes": attributes or {},
+        "created_at": datetime.now(timezone.utc),
+    })
+
+
+def return_stats(category, limit: int = 1000) -> dict:
+    """Aggregate a category's real return history for Wapsi to reason over."""
+    from collections import Counter
+
+    col = _get_client()[_DB_NAME]["return_events"]
+    reasons = Counter()
+    total = 0
+    for e in col.find({"category": category}, {"reason": 1}).limit(limit):
+        reasons[e.get("reason") or "other"] += 1
+        total += 1
+    ranked = reasons.most_common()
+    return {
+        "category": category,
+        "total": total,
+        "by_reason": dict(ranked),
+        "top_reason": ranked[0][0] if ranked else None,
+        # share of the single most common reason — a rough confidence signal
+        "top_share": round(ranked[0][1] / total, 2) if total else 0.0,
+    }

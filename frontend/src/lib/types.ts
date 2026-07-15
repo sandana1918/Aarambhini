@@ -48,6 +48,7 @@ export type Returns = {
   mitigations?: string[];
   needs_seller_confirmation?: boolean;
   confirmation_prompt?: string | null;
+  learned_from_returns?: number;
 };
 
 export type Packaging = {
