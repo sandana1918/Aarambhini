@@ -1,19 +1,18 @@
 import Link from 'next/link';
+import Image from 'next/image';
 
 export function Logo({ size = 'md' }: { size?: 'sm' | 'md' }) {
-  const dim = size === 'sm' ? 'h-8 w-8' : 'h-9 w-9';
+  const h = size === 'sm' ? 'h-7' : 'h-9';
   return (
-    <Link href="/" className="flex items-center gap-2.5 shrink-0">
-      <span
-        className={`${dim} grid place-items-center rounded-xl bg-brand text-white font-bold shadow-sm`}
-        aria-hidden
-      >
-        आ
-      </span>
-      <span className="flex flex-col leading-none">
-        <span className="text-[17px] font-bold tracking-tight text-ink">Aarambhini</span>
-        <span className="text-[10px] font-medium text-muted">she who begins</span>
-      </span>
+    <Link href="/" className="flex shrink-0 items-center" aria-label="Aarambhini — home">
+      <Image
+        src="/logo.png"
+        alt="Aarambhini — agentic co-founder for women sellers"
+        width={1418}
+        height={457}
+        priority
+        className={`${h} w-auto`}
+      />
     </Link>
   );
 }
