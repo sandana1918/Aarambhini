@@ -16,3 +16,6 @@ trust_qr_*.png
 
 # Local Claude Code config
 .claude/
+
+# Throwaway review renders
+.codex_review/
