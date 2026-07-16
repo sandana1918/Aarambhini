@@ -79,6 +79,7 @@ python -m backend.seed_demo               # reference data + a realistic marketp
 | `STT_PROVIDER` | `sarvam` (default) or `gemini` |
 | `SARVAM_API_KEY` / `SARVAM_STT_MODEL` | Speech-to-text (`saarika:v2.5`) |
 | `CORS_ORIGINS` | Production origins; dev allows any localhost |
+| `SESSION_SECRET` / `SESSION_TTL_HOURS` | Signs seller session tokens. Blank in dev = ephemeral per restart; **required** outside dev |
 
 Nothing is hardcoded — no key ever lives in the source.
 
@@ -89,8 +90,19 @@ uvicorn backend.main:app --port 8000              # API
 npm --prefix frontend run dev -- --port 3001      # web
 ```
 
-Open **http://localhost:3001** → *Start selling*. Record or type a description, add a photo,
-set your margin, and watch the agents stream in live.
+Open **http://localhost:3001** → *Start selling*. Log in (or register), then record or type a
+description, add a photo, set your margin, and watch the agents stream in live.
+
+**Demo logins** — every seeded seller shares the password `aarambhini-demo` (override with
+`DEMO_SELLER_PASSWORD` before seeding). Demo credentials only; never ship them.
+
+| Phone | Seller |
+|---|---|
+| `9990000001` | Sunita Devi |
+| `9990000002` | Lakshmi Ammal |
+| `9990000003` | Ratna Barik |
+
+…and four more in `backend/seed_demo.py`.
 
 Seeding options:
 
@@ -114,6 +126,8 @@ streamlit run app.py           # alternative single-file UI
 
 | Endpoint | Purpose |
 |---|---|
+| `POST /sellers` | Register a seller (phone + password) — returns a session, already logged in |
+| `POST /sessions` | Log in (phone + password → bearer token) · `GET /sessions/me` resolves it |
 | `POST /listings/run` | Run the crew (multipart: `voice_text`, `photo`, `desired_margin_pct`) |
 | `POST /listings/run/stream` | Same, streamed live over SSE — one event per agent |
 | `POST /listings/transcribe` | Speech → text (Sarvam, Gemini fallback) |
@@ -121,6 +135,10 @@ streamlit run app.py           # alternative single-file UI
 | `POST /listings/{id}/approve` | Approve / edit price / reject; resumes the paused run |
 | `POST /listings/{id}/return` | Log a real buyer return — **Wapsi learns from this** |
 | `GET /listings/{id}` · `GET /health` | Fetch a listing · health + DB check |
+
+`clarify`, `approve` and `return` require `Authorization: Bearer <token>` **and** that the caller
+owns the listing. `run` uses the session when present; an anonymous run creates an unowned
+listing that can never be approved — so sign in first.
 
 ## Project layout
 
@@ -151,6 +169,14 @@ These matter more than the demo:
   **AI-generated-image detection is not reliably solved**, and we don't claim it is.
 - **No EXIF check, by design.** WhatsApp strips metadata, so "no EXIF = fake" would false-flag
   most rural sellers.
+- **Auth is real, but a password is the wrong credential for this seller.** Registration and
+  login use phone + password (scrypt-hashed), a listing belongs to the seller who created it,
+  and only she can clarify, approve or report returns on it. What's honest to say: the whole
+  premise here is that she *speaks once instead of typing*, and a password she has to remember
+  cuts against that. **Phone + OTP is the domain-correct answer**; passwords are a deliberate
+  trade for a prototype with no SMS provider. Also missing: **no password reset** (recovery
+  needs the same verified channel), and login throttling is **in-memory and per-process**, so
+  it doesn't hold across multiple backend instances.
 - Anything not built yet is listed as such in the architecture doc rather than implied.
 
 ## Swapping providers

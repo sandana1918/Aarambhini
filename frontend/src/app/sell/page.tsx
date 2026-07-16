@@ -1,13 +1,15 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Header } from '@/components/Chrome';
 import { AgentTimeline } from '@/components/AgentTimeline';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { ProductDetails } from '@/components/ProductDetails';
 import { Icon } from '@/components/icons';
-import { runListingStream, approveListing, clarifyListing } from '@/lib/api';
+import { runListingStream, approveListing, clarifyListing, fetchMe } from '@/lib/api';
+import { clearSession, loadSession, type Session } from '@/lib/session';
 import type { RunResult } from '@/lib/types';
 
 const HINDI_EXAMPLE = 'मैं हाथ से बने जूट बैग बनाती हूँ, 40 पीस, ₹200 लागत।';
@@ -34,7 +36,33 @@ export default function SellPage() {
   const [clarifyValue, setClarifyValue] = useState('');
   const [clarifying, setClarifying] = useState(false);
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
+  const router = useRouter();
+  const [session, setSession] = useState<Session | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // A stored token can be expired, revoked, or signed with a restarted dev
+  // server's secret — so confirm it with the server rather than trusting
+  // localStorage, and send her to log in if it doesn't hold up.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const stored = loadSession();
+      const me = stored ? await fetchMe() : null;
+      if (!active) return;
+      if (me) setSession(stored);
+      else router.replace('/login'); // replace: back shouldn't return here
+    })();
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
+  function onSignOut() {
+    clearSession();
+    setSession(null);
+    setResult(null);
+    router.push('/login');
+  }
 
   function pickPhoto(f: File | null) {
     setPhoto(f);
@@ -145,7 +173,27 @@ export default function SellPage() {
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-start">
           {/* ── INPUT ─────────────────────────────── */}
+          {!session ? (
+            /* Either still checking, or already being redirected to /login. */
+            <section className="card p-5 lg:sticky lg:top-24">
+              <div className="flex items-center gap-3">
+                <span className="h-5 w-5 animate-spin rounded-full border-[3px] border-brand-100 border-t-brand" />
+                <p className="text-[13px] text-muted">Checking your session…</p>
+              </div>
+            </section>
+          ) : (
           <section className="card p-5 lg:sticky lg:top-24">
+            <div className="mb-4 flex items-center justify-between gap-2 rounded-xl bg-canvas px-3 py-2">
+              <span className="min-w-0 truncate text-[12px] text-ink-2">
+                Signed in as <strong className="text-ink">{session.name}</strong>
+              </span>
+              <button
+                onClick={onSignOut}
+                className="shrink-0 text-[11px] font-semibold text-muted underline-offset-2 transition hover:text-ink hover:underline"
+              >
+                Sign out
+              </button>
+            </div>
             <label className="block text-[13px] font-semibold text-ink">
               1. Tell us about your product
             </label>
@@ -232,6 +280,7 @@ export default function SellPage() {
               </p>
             )}
           </section>
+          )}
 
           {/* ── OUTPUT ────────────────────────────── */}
           <div className="min-w-0 space-y-6">

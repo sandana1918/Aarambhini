@@ -1,7 +1,14 @@
 import type { RunResult } from './types';
+import { clearSession, loadSession, saveSession, type Session } from './session';
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000';
+
+/** Bearer header for the current session, or {} when signed out. */
+function authHeaders(): Record<string, string> {
+  const session = loadSession();
+  return session ? { Authorization: `Bearer ${session.token}` } : {};
+}
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -12,9 +19,58 @@ async function json<T>(res: Response): Promise<T> {
     } catch {
       /* keep status text */
     }
+    // An expired or rejected token is dead weight — drop it so the UI falls
+    // back to the sign-in prompt instead of retrying with it forever.
+    if (res.status === 401) clearSession();
     throw new Error(detail);
   }
   return res.json() as Promise<T>;
+}
+
+type SessionResponse = { token: string; seller_id: string; name: string };
+
+function keep(data: SessionResponse): Session {
+  const session: Session = { token: data.token, sellerId: data.seller_id, name: data.name };
+  saveSession(session);
+  return session;
+}
+
+export async function logIn(phone: string, password: string): Promise<Session> {
+  const res = await fetch(`${API_BASE}/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone, password }),
+  });
+  return keep(await json<SessionResponse>(res));
+}
+
+export type RegisterInput = {
+  name: string;
+  phone: string;
+  password: string;
+  preferred_language: string;
+  shg_name?: string;
+};
+
+/** Register and land signed in — no second trip through the login form. */
+export async function registerSeller(input: RegisterInput): Promise<Session> {
+  const res = await fetch(`${API_BASE}/sellers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...input, shg_name: input.shg_name || null }),
+  });
+  return keep(await json<SessionResponse>(res));
+}
+
+/** Confirm a stored session is still valid server-side. Null if not. */
+export async function fetchMe(): Promise<{ seller_id: string; name: string } | null> {
+  if (!loadSession()) return null;
+  try {
+    const res = await fetch(`${API_BASE}/sessions/me`, { headers: authHeaders() });
+    return await json<{ seller_id: string; name: string }>(res);
+  } catch {
+    return null; // json() already cleared the session on a 401
+  }
 }
 
 export async function runListing(input: {
@@ -27,7 +83,11 @@ export async function runListing(input: {
   fd.append('desired_margin_pct', String(input.marginPct));
   if (input.photo) fd.append('photo', input.photo);
 
-  const res = await fetch(`${API_BASE}/listings/run`, { method: 'POST', body: fd });
+  const res = await fetch(`${API_BASE}/listings/run`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: fd,
+  });
   return json<RunResult>(res);
 }
 
@@ -52,7 +112,7 @@ export async function clarifyListing(
 ): Promise<RunResult> {
   const res = await fetch(`${API_BASE}/listings/${id}/clarify`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(answers),
   });
   return json<RunResult>(res);
@@ -67,7 +127,12 @@ export async function runListingStream(
   fd.append('desired_margin_pct', String(input.marginPct));
   if (input.photo) fd.append('photo', input.photo);
 
-  const res = await fetch(`${API_BASE}/listings/run/stream`, { method: 'POST', body: fd });
+  const res = await fetch(`${API_BASE}/listings/run/stream`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: fd,
+  });
+  if (res.status === 401) clearSession();
   if (!res.ok || !res.body) throw new Error(`${res.status} ${res.statusText}`);
 
   const reader = res.body.getReader();
@@ -103,7 +168,7 @@ export async function approveListing(
 ): Promise<{ id: string; status: string }> {
   const res = await fetch(`${API_BASE}/listings/${id}/approve`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ approved, notes: notes ?? null, edits: edits ?? null }),
   });
   return json(res);

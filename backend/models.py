@@ -33,9 +33,27 @@ class SellerCreate(BaseModel):
     licenses: SellerLicenses = SellerLicenses()
 
 
+class SellerRegister(SellerCreate):
+    """Registration = seller details + the password she'll log in with."""
+    password: str = Field(..., min_length=8, max_length=128)
+
+
 class SellerOut(SellerCreate):
     id: str
     created_at: datetime
+
+
+class SessionStart(BaseModel):
+    """Log in: phone + password → a session token."""
+    phone: str = Field(..., min_length=8, max_length=15)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class SessionOut(BaseModel):
+    token: str
+    seller_id: str
+    name: str
+    expires_in_hours: int
 
 
 class ListingRunRequest(BaseModel):
