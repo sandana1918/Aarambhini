@@ -13,9 +13,10 @@ from typing import Optional
 
 from bson import ObjectId
 from PIL import Image
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 
+from ..auth import current_seller, optional_seller, require_listing_owner
 from ..db import get_db, LISTINGS, AUDIT_LOG
 from ..models import ApprovalDecision, ClarificationAnswers, ReturnReport
 
@@ -35,6 +36,14 @@ def _oid_or_none(value):
         return ObjectId(value) if value else None
     except Exception:  # noqa: BLE001
         return None
+
+
+def _listing_oid(listing_id: str) -> ObjectId:
+    """A listing id from the URL — 404 on a malformed one rather than 500."""
+    try:
+        return ObjectId(listing_id)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=404, detail="Listing not found")
 
 
 def _listing_fields(result: dict) -> dict:
@@ -63,10 +72,16 @@ def _listing_fields(result: dict) -> dict:
 async def run_listing(
     voice_text: str = Form(...),
     desired_margin_pct: int = Form(20),
-    seller_id: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None),
+    seller_id: Optional[str] = Depends(optional_seller),
 ):
-    """Run the agent crew on a voice note + one product photo (multipart)."""
+    """Run the agent crew on a voice note + one product photo (multipart).
+
+    The seller comes from the session, never from the request body — a
+    client-supplied seller_id is just a claim, and trusting it is the hole
+    that let anyone act as anyone. Anonymous runs still work, but produce a
+    listing nobody owns and therefore nobody can approve.
+    """
     import orchestrator  # repo-root module; imported lazily so backend stays importable
     import graph_store
 
@@ -126,8 +141,8 @@ async def _save_photo(photo: Optional[UploadFile]) -> Optional[str]:
 async def run_listing_stream(
     voice_text: str = Form(...),
     desired_margin_pct: int = Form(20),
-    seller_id: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None),
+    seller_id: Optional[str] = Depends(optional_seller),
 ):
     """Same as /run, but streams each agent's completion live over SSE.
 
@@ -198,7 +213,11 @@ async def run_listing_stream(
 
 
 @router.post("/{listing_id}/clarify")
-async def clarify_listing(listing_id: str, answers: ClarificationAnswers):
+async def clarify_listing(
+    listing_id: str,
+    answers: ClarificationAnswers,
+    seller_id: str = Depends(current_seller),
+):
     """Answer the blocking-gap questions and resume the paused run.
 
     The graph was paused at the clarify interrupt right after Suno; this resumes
@@ -209,10 +228,11 @@ async def clarify_listing(listing_id: str, answers: ClarificationAnswers):
     import graph_store  # noqa: F401 - ensures the checkpointer client is available
 
     db = get_db()
-    oid = ObjectId(listing_id)
+    oid = _listing_oid(listing_id)
     doc = await db[LISTINGS].find_one({"_id": oid})
     if not doc:
         raise HTTPException(status_code=404, detail="Listing not found")
+    require_listing_owner(doc, seller_id)
     if doc.get("status") != "needs_clarification":
         raise HTTPException(status_code=409, detail=f"Listing is '{doc.get('status')}', not awaiting clarification")
     thread_id = doc.get("thread_id")
@@ -261,21 +281,33 @@ async def transcribe(audio: UploadFile = File(...)):
 
 
 @router.post("/{listing_id}/return")
-async def report_return(listing_id: str, report: ReturnReport):
+async def report_return(
+    listing_id: str,
+    report: ReturnReport,
+    seller_id: str = Depends(current_seller),
+):
     """Log a real buyer return. This feeds Wapsi — future listings in the same
     category are forecast from this accumulating history, not just reasoning.
+
+    Ownership is enforced because this endpoint writes Wapsi's training data:
+    left open, it is a path to poisoning every future forecast in a category.
+    Note the trust model this implies — the seller reports returns against her
+    own listing, so it guards against outside tampering, not under-reporting.
+    A marketplace webhook is the honest long-term source.
     """
     import graph_store
 
     db = get_db()
-    doc = await db[LISTINGS].find_one({"_id": ObjectId(listing_id)})
+    oid = _listing_oid(listing_id)
+    doc = await db[LISTINGS].find_one({"_id": oid})
     if not doc:
         raise HTTPException(status_code=404, detail="Listing not found")
+    require_listing_owner(doc, seller_id)
 
     category = (doc.get("suno") or {}).get("category") or (doc.get("listing") or {}).get("category")
     await asyncio.to_thread(
         graph_store.record_return_event,
-        ObjectId(listing_id),
+        oid,
         doc.get("seller_id"),
         category,
         report.reason,
@@ -287,27 +319,40 @@ async def report_return(listing_id: str, report: ReturnReport):
 
 @router.get("/{listing_id}")
 async def get_listing(listing_id: str):
+    # Deliberately still open: the frontend reads back the listing it just
+    # created, including on anonymous runs. It is an information-disclosure
+    # gap (a guessed id exposes a seller's listing) — scoped as a follow-up,
+    # not fixed here.
     db = get_db()
-    doc = await db[LISTINGS].find_one({"_id": ObjectId(listing_id)})
+    doc = await db[LISTINGS].find_one({"_id": _listing_oid(listing_id)})
     if not doc:
         raise HTTPException(status_code=404, detail="Listing not found")
     return _out(doc)
 
 
 @router.post("/{listing_id}/approve")
-async def approve_listing(listing_id: str, decision: ApprovalDecision):
+async def approve_listing(
+    listing_id: str,
+    decision: ApprovalDecision,
+    seller_id: str = Depends(current_seller),
+):
     """The approval gate — resumes the paused LangGraph run with the seller's
     decision. The graph was checkpointed at an interrupt() in the approval node;
     Command(resume=...) continues it to publish/reject, applying any edits.
+
+    "Nothing publishes without her approval" is the product's central promise,
+    so this route checks that the caller *is* her, not just that the listing is
+    waiting. Status alone was never enough.
     """
     import orchestrator
     import graph_store  # noqa: F401 - ensures the checkpointer client is available
 
     db = get_db()
-    oid = ObjectId(listing_id)
+    oid = _listing_oid(listing_id)
     doc = await db[LISTINGS].find_one({"_id": oid})
     if not doc:
         raise HTTPException(status_code=404, detail="Listing not found")
+    require_listing_owner(doc, seller_id)
     if doc.get("status") != "ready_for_approval":
         raise HTTPException(status_code=409, detail=f"Listing is '{doc.get('status')}', not awaiting approval")
     thread_id = doc.get("thread_id")
@@ -341,7 +386,11 @@ async def approve_listing(listing_id: str, decision: ApprovalDecision):
 
     await db[LISTINGS].update_one({"_id": oid}, {"$set": update})
     await db[AUDIT_LOG].insert_one({
-        "actor": doc.get("seller_id"),
+        # The verified caller, not the listing's stored owner. Those are now
+        # always the same seller (require_listing_owner ran above), but the
+        # audit trail should record who actually acted — reading it back off
+        # the document would just be restating what we assumed.
+        "actor": ObjectId(seller_id),
         "action": "approve_publish" if decision.approved else "reject",
         "listing_id": oid,
         "payload": decision_payload,

@@ -26,6 +26,9 @@ import uuid
 import asyncio
 from datetime import datetime, timezone, timedelta
 
+from .auth import hash_password
+from .seed import DEMO_PASSWORD  # one definition, shared by both seeds
+
 _DATA = os.path.join(os.path.dirname(__file__), "..", "data")
 
 
@@ -317,6 +320,10 @@ async def seed_demo(keep_existing=False):
     rules = _load_rules()
     now = datetime.now(timezone.utc)
 
+    # One scrypt hash reused across the demo roster — hashing seven times would
+    # cost ~700ms to produce seven hashes of the same throwaway password.
+    demo_hash = hash_password(DEMO_PASSWORD)
+
     # Upsert the full 7-seller roster (superset of seed.py's 3), idempotent by phone.
     for s in SELLERS:
         seller_doc = {
@@ -331,6 +338,13 @@ async def seed_demo(keep_existing=False):
             {"phone": s["phone"]},
             {"$set": seller_doc, "$setOnInsert": {"created_at": now}},
             upsert=True,
+        )
+        # Give demo sellers a known password so the seeded roster is loginable.
+        # Only where one is missing — re-seeding must never clobber a password
+        # a real seller chose.
+        await db[SELLERS_COL].update_one(
+            {"phone": s["phone"], "password_hash": {"$exists": False}},
+            {"$set": {"password_hash": demo_hash}},
         )
 
     sellers_by_phone = {}
@@ -458,6 +472,12 @@ async def seed_demo(keep_existing=False):
     for c in ["sellers", "listings", "compliance_rules", "price_benchmarks",
               "image_fingerprints", "audit_log", "product_images.files"]:
         print(f"  {c:22s}: {await db[c].count_documents({})}")
+
+    print()
+    print(f"Demo logins — password for every seeded seller: {DEMO_PASSWORD!r}")
+    for s in SELLERS[:3]:
+        print(f"  {s['phone']}  {s['name']}")
+    print(f"  … and {len(SELLERS) - 3} more. Demo credentials only — never ship these.")
 
 
 if __name__ == "__main__":

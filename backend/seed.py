@@ -13,7 +13,11 @@ import json
 import asyncio
 from datetime import datetime, timezone
 
+from .auth import hash_password
 from .models import ComplianceRule, PriceBenchmark, SellerCreate
+
+# Shared with seed_demo — the throwaway password every seeded seller gets.
+DEMO_PASSWORD = os.getenv("DEMO_SELLER_PASSWORD", "aarambhini-demo")
 
 # Single source of truth: the repo-root data/ the agents also read.
 _DATA = os.path.join(os.path.dirname(__file__), "..", "data")
@@ -110,12 +114,19 @@ async def seed():
     # and set created_at only on first insert.
     sellers = load_demo_sellers()
     now = datetime.now(timezone.utc)
+    demo_hash = hash_password(DEMO_PASSWORD)
     for s in sellers:
         await db[SELLERS].update_one(
             {"phone": s["phone"]},
             {"$set": s, "$setOnInsert": {"created_at": now}},
             upsert=True,
         )
+        # Only where absent — a re-seed must not reset a real seller's password.
+        await db[SELLERS].update_one(
+            {"phone": s["phone"], "password_hash": {"$exists": False}},
+            {"$set": {"password_hash": demo_hash}},
+        )
+    print(f"Demo sellers seeded. Login password for all of them: {DEMO_PASSWORD!r}")
 
     print(f"Seeded {len(rules)} compliance rules, {len(benches)} price benchmarks, and "
           f"{len(sellers)} demo sellers into '{db.name}'.")

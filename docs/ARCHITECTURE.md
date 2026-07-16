@@ -183,6 +183,7 @@ erDiagram
         ObjectId _id PK
         string phone UK "unique index"
         string name
+        string password_hash "scrypt$n$r$p$salt$key — never leaves the API"
         string preferred_language "hi/ta/or/…"
         string shg_name
         object address "line, district, state, pincode"
@@ -262,7 +263,7 @@ erDiagram
 
 | Collection | Index | Purpose |
 |---|---|---|
-| `sellers` | `phone` **unique** | one account per number; seed upserts by phone |
+| `sellers` | `phone` **unique** | one account per number; also what makes a duplicate registration a clean 409 rather than a race |
 | `listings` | `seller_id`, `status` | seller's listings; approval-queue queries |
 | `compliance_rules` | `category` **unique** | one rule per category; seed upserts |
 | `price_benchmarks` | `(category, region)` **unique** | one benchmark per category/region |
@@ -305,6 +306,13 @@ sequenceDiagram
     participant GEM as Gemini
     participant DB as Atlas
 
+    Seller->>UI: /login — phone + password
+    UI->>API: POST /sessions {phone, password}
+    API->>DB: find seller by phone
+    API->>API: scrypt verify (~100ms, dummy hash if unknown)
+    Note over API: wrong phone and wrong password are<br/>identical in message AND timing
+    API-->>UI: signed bearer token (HMAC, 12h)
+
     Seller->>UI: tap "Record", speak in own language
     UI->>UI: MediaRecorder → decode → 16kHz mono WAV
     UI->>API: POST /listings/transcribe (WAV)
@@ -314,9 +322,10 @@ sequenceDiagram
     SARV-->>UI: transcript (fills textarea)
 
     Seller->>UI: add photo, set margin, "Run Aarambhini"
-    UI->>API: POST /listings/run/stream (SSE — agents stream in live)
+    UI->>API: POST /listings/run/stream (SSE) + Bearer token
+    Note over API: seller_id comes from the SESSION,<br/>never from the request body
     API->>DB: store photo in GridFS → image_ref
-    API->>ORCH: orchestrator.run(text, image_ref, margin, thread_id)
+    API->>ORCH: orchestrator.run(text, image_ref, margin, thread_id, seller_id)
 
     Note over ORCH,GEM: Suno → (loops: Quality / Compliance / Returns) → Packaging → Wapsi → finalize
     ORCH->>DB: checkpoint each node's state (thread_id)
@@ -326,14 +335,27 @@ sequenceDiagram
     API-->>UI: listing + price + compliance + returns + timeline
 
     Seller->>UI: review, optionally edit price, "Publish"
-    UI->>API: POST /listings/{id}/approve {approved, notes, edits}
+    UI->>API: POST /listings/{id}/approve {approved, notes, edits} + Bearer
+    API->>API: verify token → seller_id; require_listing_owner()
+    Note over API: not the owner (or no token) → 404 / 401,<br/>before the graph is ever resumed
     API->>ORCH: resume(thread_id, decision) — Command(resume)
     ORCH->>ORCH: apply edits, set status, → END
     ORCH-->>API: final state (published + edits)
-    API->>DB: update listing + insert audit_log
+    API->>DB: update listing + audit_log {actor: verified caller}
     API-->>UI: {status: published}
     UI-->>Seller: 🎉 live at ₹N
 ```
+
+> **On the credential.** Registration and login are real: phone + password, hashed with
+> `hashlib.scrypt` (~100ms/hash, salted, parameters stored inside each hash), signed session
+> tokens, login throttled to 5 failures per 15 minutes. Ownership is enforced end-to-end — only
+> the seller who created a listing can clarify, approve or report returns on it.
+>
+> But a **password is the wrong credential for this user**. The product's premise is that she
+> speaks once instead of typing; a password she must remember cuts against that, and there is no
+> reset flow (recovery needs a verified channel). **Phone + OTP is the domain-correct answer** and
+> was traded away only because this prototype has no SMS provider. Swapping it in touches login
+> and registration alone — every protected route already resolves its caller via `current_seller`.
 
 ---
 

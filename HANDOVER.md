@@ -80,18 +80,22 @@ data/                  SINGLE SOURCE OF TRUTH for reference data (see §11 trap 
   listing_attributes.json  Meesho-style per-category field specs
 backend/
   main.py              FastAPI app, CORS, startup indexes, /health
+  auth.py              scrypt passwords · HMAC session tokens · login throttle · ownership
   db.py                Motor client, collection names, ensure_indexes()
   models.py            Pydantic schemas
-  seed.py              reference seed (rules, benchmarks, 3 sellers)
+  seed.py              reference seed (rules, benchmarks, 3 sellers) + DEMO_PASSWORD
   seed_demo.py         FULL realistic seed (7 sellers, 10 listings, 74 returns)
   routers/listings.py  run · run/stream · transcribe · clarify · approve · return · GET
-  routers/sellers.py   /sellers
+  routers/sellers.py   /sellers — registration (hashes the password, returns a session)
+  routers/sessions.py  /sessions — login · /sessions/me
   routers/rules.py     /compliance
 frontend/src/
   app/page.tsx         landing
-  app/sell/page.tsx    THE main flow
+  app/login/page.tsx   login (phone + password)
+  app/register/page.tsx  registration → auto-login → /sell
+  app/sell/page.tsx    THE main flow — redirects to /login without a valid session
   components/          Chrome (header/logo) · VoiceRecorder · AgentTimeline · ProductDetails · icons
-  lib/                 api.ts · types.ts · recorder.ts (mic → 16kHz WAV)
+  lib/                 api.ts · session.ts (token store) · types.ts · recorder.ts (mic → 16kHz WAV)
 docs/                  ARCHITECTURE.md + hld-diagram.png + agent-flow-diagram.png
 ```
 
@@ -160,7 +164,14 @@ STT_PROVIDER=sarvam            # or "gemini"
 SARVAM_API_KEY=...
 SARVAM_STT_MODEL=saarika:v2.5
 CORS_ORIGINS=                  # empty in dev = any localhost allowed
+SESSION_SECRET=                # blank in dev = ephemeral per restart; REQUIRED in prod
+SESSION_TTL_HOURS=12
+DEMO_SELLER_PASSWORD=          # password given to seeded sellers (default: aarambhini-demo)
 ```
+
+> **Demo logins:** every seeded seller's password is `aarambhini-demo`. `9990000002` is Lakshmi
+> Ammal, `9990000003` is Ratna Barik; the full roster is in `backend/seed_demo.py`. Both seed
+> scripts set this password **only where one is missing**, so a re-seed never clobbers a real one.
 
 ```bash
 pip install -r requirements.txt          # agents/orchestrator/graph_store
@@ -174,9 +185,15 @@ npm --prefix frontend run dev -- --port 3001     # web  →  http://localhost:30
 
 > ⚠️ **The app runs on SYSTEM Python 3.13, NOT `.venv`.** See trap #1 in §11.
 
-**API surface:** `POST /listings/run` · `/listings/run/stream` (SSE) · `/listings/transcribe` ·
-`/listings/{id}/clarify` · `/listings/{id}/approve` · `/listings/{id}/return` ·
-`GET /listings/{id}` · `GET /health` · `/sellers` · `/compliance`
+**API surface:** `POST /sellers` (register → token) · `POST /sessions` (login → token) ·
+`GET /sessions/me` · `POST /listings/run` ·
+`/listings/run/stream` (SSE) · `/listings/transcribe` · `/listings/{id}/clarify` ·
+`/listings/{id}/approve` · `/listings/{id}/return` · `GET /listings/{id}` · `GET /health` ·
+`/sellers` · `/compliance`
+
+> `clarify` · `approve` · `return` need `Authorization: Bearer <token>` **and** listing
+> ownership. `run` takes the session when present; an anonymous run makes an **unowned**
+> listing that can never be approved — which is why the web app signs in first.
 
 ---
 
@@ -191,6 +208,10 @@ npm --prefix frontend run dev -- --port 3001     # web  →  http://localhost:30
 | pHash | same/resized photo → Hamming **0**; inverted → **64**. Same photo, different seller → **blocked** (`needs_retake`) |
 | Wapsi learning | décor 85% damaged → high risk + fragile packing; furnishing 57% size → size guide; logging 4 returns flipped toys `size_mismatch` → `damaged` |
 | Live streaming | SSE steps arrive incrementally 5.3s → 16s; browser list grows 0→1→4→9→12 |
+| Ownership enforcement | Lakshmi's run → `ready_for_approval` @ ₹306, `seller_id` attributed **from her session**. Ratna's token → `/approve` **404**, `/return` **404**, `/clarify` **404**; no token → **401**; listing still `ready_for_approval` after all three. Lakshmi → `published` **200**, audit `actor` resolves to **Lakshmi Ammal** (was `None`) |
+| Session tokens | forged signature → 401 · expired → 401 · `''`/`nonsense`/`a.b` → 401. Browser: login → reload survives → tampered token auto-clears and bounces to `/login` |
+| Register / login | register → **201** + auto-login → lands on `/sell` as the new seller · duplicate phone → **409** · password < 8 → **422** · `GET /sellers/{id}` does **not** return `password_hash` · wrong password → **401**, no session stored · 6th failed attempt → **429** for 15 min · sign out → `/login`, token gone |
+| Login timing | wrong password vs unknown phone: **343ms vs 313ms** (noise). Before the dummy-hash fix it was **382ms vs 253ms** — `verify_password` short-circuited on a missing hash, so a fast reply revealed "no such seller" and undid the identical error message. Caught by measuring, not by reading |
 
 ---
 
@@ -230,8 +251,21 @@ These are deliberate. Reversing one without understanding the reason will make t
   This is the single highest-risk failure.
 - **A missing licence does not block publishing.** `compliance_ok = (not required_labels) or
   label_applied` — licences (FSSAI/BIS/AYUSH) are warnings only. A food seller with no FSSAI can publish.
-- **No auth at all.** Verified: no `Depends`, no token, no 401/403. `/approve` checks *status*,
-  not ownership → anyone can publish someone else's listing, or spam `/return` to poison Wapsi.
+- ~~**No auth at all.**~~ **Fixed.** Real register/login (phone + password, `hashlib.scrypt`,
+  ~100ms/hash), signed session tokens, ownership enforced on `/approve` · `/clarify` · `/return`,
+  and `seller_id` taken from the session rather than a spoofable form field. Login is throttled
+  (5 failures → 429 for 15 min) and wrong-phone vs wrong-password are indistinguishable in both
+  message *and* timing. What's still missing, in order of how much it matters:
+  - **Passwords are the wrong credential for this seller** — the product's promise is that she
+    speaks once instead of typing. **Phone + OTP** is the right answer; passwords were a trade
+    for having no SMS provider. Revisit before real sellers touch it.
+  - **No password reset.** A forgotten password needs a database edit — recovery needs the same
+    verified channel OTP would give.
+  - **Throttling is in-memory, per-process** — it won't hold across multiple backend instances
+    (move to Mongo/Redis when the backend scales past one).
+- **`GET /listings/{id}` is still open** — a guessed id exposes a seller's listing. Deliberate
+  for now (the frontend reads back anonymous runs); an information-disclosure gap, not a
+  publishing one.
 
 ### 🟡 Input / photo cases
 - Price **in words** ("do sau rupaye") — `_extract_rupees` is digits-only → falls to clarify (graceful).
@@ -287,6 +321,14 @@ These are deliberate. Reversing one without understanding the reason will make t
     Not a bug — verify via DOM instead.
 11. **Mermaid `linkStyle` indices shift** whenever you add an edge; and `*/` inside a JSDoc
     comment (e.g. `w-*/h-*`) silently terminates the comment and breaks the build.
+12. **Motor binds to the first event loop** — a bare `TestClient(app)` opens a new loop per
+    request, so the *second* DB-touching request dies with `RuntimeError: Event loop is closed`.
+    Use `with TestClient(app) as c:` (one loop for the block). This will bite on the Tier 3
+    API tests immediately.
+13. **The frontend's React Compiler lint rejects a synchronous `setState` in a `useEffect` body**
+    (`react-hooks/set-state-in-effect`) — `npx tsc --noEmit` passes and it still fails lint.
+    Put the work in an async callback inside the effect. Note `next lint` is gone in Next 16;
+    run `npx eslint src --ext .ts,.tsx`.
 
 ---
 
@@ -318,8 +360,10 @@ These are deliberate. Reversing one without understanding the reason will make t
 
 ## 14. Suggested next steps (in order)
 
-1. **Fix the 3 red items** — auth/ownership on `/approve`, licence-blocking (or explicit
-   acknowledgement), and a category-confidence check so food can't silently skip FSSAI.
+1. **Fix the 3 red items** — ~~auth/ownership on `/approve`~~ **(done — see §8)**. Still open:
+   licence-blocking (decided: explicit seller acknowledgement at the approval interrupt,
+   recorded in the audit log — *not built yet*), and a category-confidence check so food can't
+   silently skip FSSAI. **The category one is the highest-risk thing left in the project.**
 2. **Tests, Tier 1 + 2** — pure functions (Daam maths, `_extract_rupees`, pHash/Hamming,
    Wapsi learning, `_blocking_gaps`), then **the graph with a stubbed `llm_json`** to assert the
    loops actually fire. That tests the real differentiator.

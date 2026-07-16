@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .db import ensure_indexes, ping
-from .routers import sellers, listings, rules
+from .routers import sellers, listings, rules, sessions
 
 
 @asynccontextmanager
@@ -44,6 +44,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(sessions.router)
 app.include_router(sellers.router)
 app.include_router(listings.router)
 app.include_router(rules.router)
