@@ -90,7 +90,13 @@ export function FillMissingDetails({
     (async () => {
       try {
         const r = await getPendingAttributes(listingId);
-        if (active) setFields(r.fields.filter((f) => missingLabels.includes(f.label)));
+        // Trust the backend's list as-is. It already includes both the
+        // required-missing fields AND unset optional ones like "dimensions" —
+        // which matters because Wapsi's confirmation question ("confirm the
+        // exact height and width") has no chip to answer unless dimensions is
+        // offered here too. Re-filtering down to missingLabels (required-only)
+        // silently dropped it, leaving her question unanswerable.
+        if (active) setFields(r.fields);
       } catch {
         if (active) setFields([]); // stay quiet rather than block the approval
       }
@@ -145,11 +151,20 @@ export function FillMissingDetails({
 
   const pending = fields.filter((f) => !filled[f.key]);
   const done = fields.filter((f) => filled[f.key]);
+  // Required-missing actually blocks a good listing; an optional field being
+  // asked about (dimensions, prompted by Wapsi) does not — so it gets a
+  // calmer style rather than the same warning colour, which would otherwise
+  // read as "you must fill this" for something she's free to skip.
+  const requiredPending = pending.filter((f) => f.required).length;
 
   return (
     <div className="mt-4 rounded-xl border border-line bg-canvas p-3.5">
       <p className="text-[12.5px] font-bold text-ink">
-        {pending.length ? 'Add these details before publishing' : 'All details added'}
+        {requiredPending
+          ? 'Add these details before publishing'
+          : pending.length
+            ? 'A couple of optional details'
+            : 'All details added'}
       </p>
       <p className="mt-1 text-[11px] leading-relaxed text-muted">
         Tap one and just say the answer — the same as your voice note.
@@ -168,10 +183,12 @@ export function FillMissingDetails({
             className={`rounded-full border px-2.5 py-1 text-[11.5px] font-semibold transition ${
               open?.key === f.key
                 ? 'border-brand bg-brand-50 text-brand-700'
-                : 'border-saffron/50 bg-warn-bg text-warn hover:border-brand-300'
+                : f.required
+                  ? 'border-saffron/50 bg-warn-bg text-warn hover:border-brand-300'
+                  : 'border-line bg-surface text-ink-2 hover:border-brand-300'
             }`}
           >
-            {f.label} +
+            {f.label} {f.required ? '' : '(optional) '}+
           </button>
         ))}
         {done.map((f) => (

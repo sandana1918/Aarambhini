@@ -69,6 +69,33 @@ def load_image(image_ref):
         return None
 
 
+def get_packer_label(seller_id):
+    """A seller's {name, address} for the printed compliance label, or None.
+
+    This has sat in every seller's profile since registration — packer_label is
+    exactly what Legal Metrology wants for "Mfd by: <name>, <address>" — and
+    nothing read it, so Niyam printed the placeholder itself: "Mfr: <Manufacturer
+    Name>, <Full Address>". A label with blanks on it is not compliant; the data
+    to fill them was one query away the whole time.
+
+    Never raises into the graph: a missing/malformed seller_id (anonymous runs
+    have none) just means Niyam falls back to a placeholder, same as before.
+    """
+    if not seller_id:
+        return None
+    try:
+        from bson import ObjectId
+
+        seller = _get_client()[_DB_NAME]["sellers"].find_one(
+            {"_id": ObjectId(seller_id)}, {"packer_label": 1}
+        )
+        label = (seller or {}).get("packer_label") or {}
+        name, address = label.get("name"), label.get("address")
+        return {"name": name, "address": address} if name and address else None
+    except Exception:  # noqa: BLE001 - a lookup failure must not crash a node
+        return None
+
+
 def checkpointer():
     """The MongoDB-backed LangGraph checkpointer (durable pause/resume/history)."""
     global _checkpointer
