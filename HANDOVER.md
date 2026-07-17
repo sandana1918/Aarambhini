@@ -352,7 +352,24 @@ These are deliberate. Reversing one without understanding the reason will make t
 - **Real marketplace publishing** — `published` is an internal status only.
 - Multi-marketplace formatters; scheduled re-scoring; Bhashini option; seller accounts/auth.
 
-### Deployment notes
+### Deployment (config written, not yet deployed)
+- **`Dockerfile` (build context = repo ROOT), `render.yaml`, `DEPLOY.md`, `.dockerignore`** are in.
+  The image was **built and run locally against Atlas**: `/health` connected in prod mode, login
+  200, a **full agent run** completed (Gemini vision + Daam's pandas pricing + loops), and the
+  **SSE stream arrived incrementally** (13 steps over 8s, not buffered) — so buffering, if any,
+  will come only from a host proxy (DEPLOY.md has the curl test).
+- `/health` now reports **`degraded` + `config_error`** when `SESSION_SECRET` is missing in prod,
+  instead of booting green and 500-ing on every login. Render's `healthCheckPath: /health`
+  catches it. Verified in-container: correct config → `ok` + login 200; no secret → `degraded`.
+- **Two deploy blockers, both fail-safe:** `SESSION_SECRET` is mandatory outside dev (auth.py
+  raises), and the 7 demo sellers share `aarambhini-demo` — seed **reference data only** in prod.
+- `.dockerignore` keeps `.env` out of the image (an image layer is readable by anyone who can
+  pull it). `streamlit`/`qrcode` are NOT on the API path (only `app.py` / `utils/trust_qr.py`);
+  `pandas` IS (Daam, Packaging), so it ships.
+- Docker CMD uses `["sh","-c","exec uvicorn …"]` so uvicorn is PID 1's child and gets SIGTERM on
+  redeploy; `--workers 1` because the login throttle is per-process (see §11 trap on scaling).
+
+### Deployment notes (background)
 - Frontend → **Vercel**. Backend → **Render/Railway/Fly/Cloud Run** (must be a long-running
   service, **not serverless** — a run takes ~15s and would hit function timeouts).
 - **SSE buffering** is the big risk: many hosts/proxies buffer, which kills the live agent stream.
