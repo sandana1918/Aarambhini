@@ -93,7 +93,9 @@ frontend/src/
   app/page.tsx         landing
   app/login/page.tsx   login (phone + password)
   app/register/page.tsx  registration → auto-login → /sell
-  app/sell/page.tsx    THE main flow — redirects to /login without a valid session
+  app/sell/page.tsx    THE main flow — 3 steps; redirects to /login without a session
+  components/Stepper.tsx  1 Tell us → 2 The crew works → 3 Review & publish
+  components/Tabs.tsx     reference panes for step 3 (NOT for anything she vouches for)
   components/          Chrome (header/logo) · VoiceRecorder · AgentTimeline · ProductDetails · icons
   lib/                 api.ts · session.ts (token store) · types.ts · recorder.ts (mic → 16kHz WAV)
 docs/                  ARCHITECTURE.md + hld-diagram.png + agent-flow-diagram.png
@@ -256,6 +258,13 @@ These are deliberate. Reversing one without understanding the reason will make t
 13. **Wapsi learns ONLY from `return_events` on this platform** — never another marketplace's data.
 14. **Positioning: on-ramp, not a storefront.** A public browse page contradicts the pitch;
     a "buyer's-eye preview" or a seller "my listings" view does not.
+14a. **Steps, not tabs — and never a tab over anything she vouches for.** The flow is
+    sequential (she can't review a listing before the crew writes one), so it's a 3-step
+    wizard: tabs imply peers you may visit in any order, steps say "you are here". Inside
+    step 3, tabs hold only *reference* panes (details · compliance · returns · packaging ·
+    activity). The conflict warning, missing details, checklist and approval gate stay on the
+    page: **an unopened tab reads as "no problem here"**, and "nothing publishes without her
+    approval" is hollow if what she approves is hidden one click away.
 14b. **Answer in the language she just SPOKE, not the one she registered with.**
     `detected_language` (this voice note) beats `preferred_language` (a tick at registration):
     a seller registered Tamil who records a Hindi note is speaking Hindi *today*, and replying
