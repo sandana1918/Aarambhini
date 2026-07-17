@@ -65,7 +65,14 @@ export type Approval = { type: string; summary: string };
 
 export type ProductAttributes = Record<string, string | number | string[] | null>;
 
-export type ClarificationQuestion = { field: string; type: string; prompt: string };
+export type CategoryOption = { key: string; label: string };
+export type ClarificationQuestion = {
+  field: string;
+  /** 'number' (a ₹ amount) or 'choice' (pick one of `options`). */
+  type: string;
+  prompt: string;
+  options?: CategoryOption[];
+};
 export type Clarification = { kind: string; questions: ClarificationQuestion[] };
 
 export type Authenticity = {

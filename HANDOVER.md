@@ -212,6 +212,9 @@ npm --prefix frontend run dev -- --port 3001     # web  →  http://localhost:30
 | Session tokens | forged signature → 401 · expired → 401 · `''`/`nonsense`/`a.b` → 401. Browser: login → reload survives → tampered token auto-clears and bounces to `/login` |
 | Register / login | register → **201** + auto-login → lands on `/sell` as the new seller · duplicate phone → **409** · password < 8 → **422** · `GET /sellers/{id}` does **not** return `password_hash` · wrong password → **401**, no session stored · 6th failed attempt → **429** for 15 min · sign out → `/login`, token gone |
 | Login timing | wrong password vs unknown phone: **343ms vs 313ms** (noise). Before the dummy-hash fix it was **382ms vs 253ms** — `verify_password` short-circuited on a missing hash, so a fast reply revealed "no such seller" and undid the identical error message. Caught by measuring, not by reading |
+| Her language at approval | Lakshmi (`ta`) → approval gate renders **Tamil** above the English, 2 Listen buttons, `/language/speak` → **200 `audio/wav`**. Same request as Ratna (`or`) → **Odia**. `preferred_language` had been collected since day one and used nowhere |
+| Seller edits | Title + description + price editable at approval (the graph always accepted them; only the UI was missing). Through the real UI: her title, her description, ₹420 → all three in Mongo, `seller_overridden: true`, audit records `['description','price','title']`. Below break-even → warns, still lets her publish |
+| Category gate | unmatched text → `None` (was `handicrafts_decor`) · hallucinated key `"food"` → rejected · `attributes_for(None)` → `{}` not a half-set · unknown → clarify asks with 13 options · known category → **0 gaps** (speak-once intact) · clarify resume applies her choice and **rebuilds** the category's attributes · a bogus key posted to `/clarify` is ignored. Live: crochet-teddy photo + matching words → `toys_games`, no interrupt, **BIS** correctly required |
 
 ---
 
@@ -223,6 +226,9 @@ These are deliberate. Reversing one without understanding the reason will make t
    `price = cost + shipping + overhead + margin`; `discount_floor = break-even`.
 2. **Every LLM agent has a deterministic fallback** → a run degrades, never hard-fails.
 3. **One model seam (`llm.py`).** Swapping Gemini/Sarvam → Bhashini/Whisper touches ONE file.
+   Now also `translate()` (Sarvam Mayura) and `speak()` (Sarvam Bulbul TTS) — same key as STT.
+   Both **degrade to the original text / no audio** rather than raising: a failed translation
+   must never blank the text she is approving.
 4. **Sarvam is STT primary** — India-first, handles code-mixing (Hinglish/Tamlish) and noisy
    phone audio. A demo seller speaks **Odia**, which rules out most alternatives.
 5. **Audio normalised to 16 kHz mono WAV in the browser** — no server ffmpeg; every STT accepts it.
@@ -240,15 +246,33 @@ These are deliberate. Reversing one without understanding the reason will make t
 13. **Wapsi learns ONLY from `return_events` on this platform** — never another marketplace's data.
 14. **Positioning: on-ramp, not a storefront.** A public browse page contradicts the pitch;
     a "buyer's-eye preview" or a seller "my listings" view does not.
+15. **The listing publishes in ENGLISH; the review is in HER language.** Buyers and the
+    marketplace need English, so that stays the artifact. But asking her to approve English she
+    can't read makes "nothing publishes without her approval" hollow — it *is* the problem this
+    product exists to solve. So the approval gate shows her language on top, the exact English
+    that publishes underneath, and a Listen button (TTS) because she may speak Tamil fluently
+    and still not read it. **Never translate the compliance label text itself** — Legal
+    Metrology expects the printed label in English/Hindi; translate the *explanation* of it.
+    If a translation is wrong she'd be approving something she never saw, which is worse than
+    English-only, so the English stays visible and is labelled as authoritative.
 
 ---
 
 ## 10. Known gaps — the audited answer to "all types of cases"
 
 ### 🔴 High risk (can actually harm a seller)
-- **Category misclassification → wrong law.** The jute bag flipped between `handloom_textiles`
-  and `bags_leather` across runs. If food lands in `handicrafts`, **Niyam never asks for FSSAI**.
-  This is the single highest-risk failure.
+- **Category misclassification → wrong law.** *(Silent fallback fixed; the model's own
+  judgement is still trusted.)* `_pick_category` used to `return "handicrafts_decor"` when no
+  alias matched — so a seller whose words missed the food aliases silently became a handicraft,
+  and handicrafts need no FSSAI. Proven: `niyam.run('handicrafts_decor', …)` → **no licences**;
+  `niyam.run('food_packaged', …)` → **FSSAI**. That fallback was the difference.
+  Now: no silent default (returns `None`), unrecognised model keys are rejected, and an unknown
+  category becomes a **blocking clarify question** offering all 13 categories.
+  **Still open:** a confidently *wrong* model answer passes through. Suno now returns
+  `category_confidence` and a low-confidence guess her words don't corroborate is sent to her —
+  but this is unit-tested only. On the one live case tried, the model answered "high", so the
+  gate has never been observed firing. If the model always says "high" it buys nothing; the
+  stronger fix is reconciling the photo's category against the text's and asking on disagreement.
 - **A missing licence does not block publishing.** `compliance_ok = (not required_labels) or
   label_applied` — licences (FSSAI/BIS/AYUSH) are warnings only. A food seller with no FSSAI can publish.
 - ~~**No auth at all.**~~ **Fixed.** Real register/login (phone + password, `hashlib.scrypt`,

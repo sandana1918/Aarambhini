@@ -132,6 +132,108 @@ def transcribe_audio(audio_bytes, mime_type="audio/wav"):
     return {"text": _transcribe_gemini(audio_bytes, mime_type), "provider": "gemini"}
 
 
+# --------------------------------------------------------------- her language
+#
+# The listing publishes in English because that is what the marketplace and its
+# buyers need. Everything she *reads* to approve it should be in her own
+# language — otherwise "nothing publishes without her approval" asks her to
+# vouch for words she can't read, which is the exact problem this product
+# exists to solve.
+#
+# Sarvam covers translate (Mayura) and speech (Bulbul) on the same key as STT.
+_SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate"
+_SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
+_SARVAM_TRANSLATE_MODEL = os.getenv("SARVAM_TRANSLATE_MODEL", "mayura:v1")
+_SARVAM_TTS_MODEL = os.getenv("SARVAM_TTS_MODEL", "bulbul:v2")
+_SARVAM_TTS_SPEAKER = os.getenv("SARVAM_TTS_SPEAKER", "anushka")
+
+# Sarvam wants BCP-47-ish codes; the app stores bare ISO codes. Odia is "od-IN"
+# to Sarvam, not the "or" you'd expect from ISO 639-1 — that mismatch is why
+# this map exists rather than an f"{code}-IN".
+_SARVAM_LANG = {
+    "en": "en-IN", "hi": "hi-IN", "bn": "bn-IN", "gu": "gu-IN", "kn": "kn-IN",
+    "ml": "ml-IN", "mr": "mr-IN", "od": "od-IN", "or": "od-IN", "pa": "pa-IN",
+    "ta": "ta-IN", "te": "te-IN",
+}
+
+SUPPORTED_SPEECH_LANGUAGES = sorted(set(_SARVAM_LANG))
+
+
+def sarvam_lang(code):
+    """ISO code -> Sarvam language tag, or None if we can't speak it."""
+    return _SARVAM_LANG.get((code or "").strip().lower()[:2])
+
+
+def translate(text, to_lang, from_lang="en"):
+    """English -> her language, for reading only.
+
+    Returns {"text": str, "provider": str}. On any failure the ORIGINAL text
+    comes back with provider="none" — never a half-translated or silently
+    dropped string, because the caller shows this to her next to the English
+    and a blank would read as "there is nothing to check here".
+    """
+    src, tgt = sarvam_lang(from_lang), sarvam_lang(to_lang)
+    clean = (text or "").strip()
+    if not clean or not tgt or tgt == src or not _SARVAM_API_KEY:
+        return {"text": clean, "provider": "none"}
+
+    import requests
+
+    try:
+        resp = requests.post(
+            _SARVAM_TRANSLATE_URL,
+            headers={"api-subscription-key": _SARVAM_API_KEY,
+                     "Content-Type": "application/json"},
+            json={
+                "input": clean[:900],  # Mayura caps input length
+                "source_language_code": src or "en-IN",
+                "target_language_code": tgt,
+                "model": _SARVAM_TRANSLATE_MODEL,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        out = (resp.json().get("translated_text") or "").strip()
+        return {"text": out or clean, "provider": "sarvam" if out else "none"}
+    except Exception:  # noqa: BLE001 - a failed translation must not break approval
+        return {"text": clean, "provider": "none"}
+
+
+def speak(text, lang):
+    """Her language -> spoken audio (WAV bytes), or None.
+
+    This matters more than the written translation: she may speak Tamil
+    fluently and still not read it, so a translated wall of text can be just as
+    closed to her as the English was.
+    """
+    tgt = sarvam_lang(lang)
+    clean = (text or "").strip()
+    if not clean or not tgt or not _SARVAM_API_KEY:
+        return None
+
+    import base64
+    import requests
+
+    try:
+        resp = requests.post(
+            _SARVAM_TTS_URL,
+            headers={"api-subscription-key": _SARVAM_API_KEY,
+                     "Content-Type": "application/json"},
+            json={
+                "text": clean[:1500],
+                "target_language_code": tgt,
+                "model": _SARVAM_TTS_MODEL,
+                "speaker": _SARVAM_TTS_SPEAKER,
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        audios = resp.json().get("audios") or []
+        return base64.b64decode(audios[0]) if audios else None
+    except Exception:  # noqa: BLE001 - no audio is a quiet degrade, not a failure
+        return None
+
+
 def _extract_json(text):
     """Pull a JSON object out of a model reply that may be fenced or chatty."""
     text = text.strip()

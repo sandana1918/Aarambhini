@@ -79,6 +79,10 @@ class ApprovalDecision(BaseModel):
 class ClarificationAnswers(BaseModel):
     """Seller's answers to blocking-gap questions raised right after Suno."""
     cost_price_inr: Optional[int] = None
+    # The category key she picked when it couldn't be determined from her words.
+    # Validated against the real rule keys in the graph, not here — data/ is the
+    # single source of truth for which categories exist.
+    category: Optional[str] = None
 
 
 class ReturnReport(BaseModel):
@@ -89,6 +93,18 @@ class ReturnReport(BaseModel):
     """
     reason: str
     notes: Optional[str] = None
+
+
+class TranslateRequest(BaseModel):
+    """Texts to render in her language. `to` defaults to her preferred_language."""
+    texts: list[str] = []
+    to: Optional[str] = None
+
+
+class SpeakRequest(BaseModel):
+    """Text to read aloud. `lang` defaults to her preferred_language."""
+    text: str
+    lang: Optional[str] = None
 
 
 class ComplianceRule(BaseModel):

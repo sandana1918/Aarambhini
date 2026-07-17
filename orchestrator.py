@@ -181,6 +181,19 @@ def _blocking_gaps(state) -> list:
             "prompt": "We couldn't hear a price. How much does one piece cost you to "
                       "make, or what price do you want to sell at? Enter the amount in ₹.",
         })
+    # An unknown category is a blocking gap because it decides which law applies.
+    # Guessing here is how food ends up filed as a handicraft and never gets
+    # asked for an FSSAI licence — the seller would publish believing she is
+    # compliant. This is the one extra question worth breaking "speak once" for.
+    if not suno.get("category"):
+        gaps.append({
+            "field": "category",
+            "type": "choice",
+            "options": suno_agent.known_categories(),
+            "prompt": "Which of these best describes what you make? The labels and "
+                      "licences the law requires depend on this, so I'd rather ask "
+                      "than guess.",
+        })
     return gaps
 
 
@@ -205,6 +218,19 @@ def clarify_node(state) -> dict:
             out["suno"] = suno
         except (TypeError, ValueError):
             pass
+
+    # She told us the category, so rebuild the attribute set — it is
+    # category-specific and Suno had nothing to build it from.
+    chosen = answers.get("category")
+    if chosen and chosen in {c["key"] for c in suno_agent.known_categories()}:
+        suno["category"] = chosen
+        out["suno"] = suno
+        attrs, missing = suno_agent.attributes_for(
+            chosen, state.get("product_attributes"), suno.get("material")
+        )
+        out["product_attributes"] = attrs
+        out["missing_attributes"] = missing
+
     out["log"] = [("Seller clarification", {"answers": answers})]
     return out
 

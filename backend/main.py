@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .db import ensure_indexes, ping
-from .routers import sellers, listings, rules, sessions
+from .routers import sellers, listings, rules, sessions, language
 
 
 @asynccontextmanager
@@ -48,6 +48,7 @@ app.include_router(sessions.router)
 app.include_router(sellers.router)
 app.include_router(listings.router)
 app.include_router(rules.router)
+app.include_router(language.router)
 
 
 @app.get("/health", tags=["meta"])

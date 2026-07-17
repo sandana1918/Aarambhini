@@ -46,17 +46,81 @@ def _category_hints():
     return "\n".join(lines)
 
 
+def known_categories():
+    """[{key, label}] — the only categories Niyam has law for.
+
+    Used to offer the seller a choice when the category can't be determined.
+    """
+    return [
+        {"key": key, "label": val.get("label") or key}
+        for key, val in _load_rules()["categories"].items()
+    ]
+
+
+def _is_known_category(key):
+    return isinstance(key, str) and key in _load_rules()["categories"]
+
+
 def _pick_category(voice_text):
+    """-> a category key, or None when nothing matches.
+
+    None is the important part. This used to return "handicrafts_decor" when no
+    alias matched, which meant a seller whose words missed the food aliases
+    silently became a handicraft — and handicrafts require no FSSAI, so Niyam
+    would never ask for it and she'd publish food believing she was compliant.
+    A wrong category is wrong *law*, so an unknown one has to reach her as a
+    question (see _blocking_gaps) rather than be guessed here.
+
+    Note this is substring-first-match over dict order, so it is a hint, not a
+    classification: "jute bag" legitimately matches both handloom and bags.
+    """
     text = voice_text.lower()
     for key, val in _load_rules()["categories"].items():
         if any(alias.lower() in text for alias in val.get("aliases", [])):
             return key
-    return "handicrafts_decor"
+    return None
+
+
+def resolve_category(raw_category, voice_text, confidence=None):
+    """The model's category if it's real AND trustworthy, else the alias hint, else None.
+
+    Two ways this returns None — both meaning "ask her":
+
+    * The model returned an unrecognised key. It must not reach Niyam, which
+      would find no rules for it and report no labels or licences at all.
+    * The model said "low" and her own words don't corroborate it. A confident
+      guess is the dangerous case: asked to describe "this thing I make at
+      home", the model answered `toys_games` — nothing in her words said toy.
+      An uncorroborated low-confidence guess is worth one tap from her.
+
+    An alias match in her own words counts as corroboration, so a low-confidence
+    label she effectively said herself still passes without a question.
+    """
+    hint = _pick_category(voice_text)
+    if _is_known_category(raw_category):
+        if str(confidence).lower() == "low" and hint != raw_category:
+            return None
+        return raw_category
+    return hint
+
+
+def attributes_for(category, raw=None, material=None):
+    """Public seam so the graph can rebuild attributes once a clarified
+    category is known — they're category-specific and were computed before.
+    """
+    return _finalize_attributes(category, raw, material)
 
 
 # ------------------------------------------------------------- attribute spec
 def _attr_fields_for(category):
-    """common attributes + the category's own, in display order."""
+    """common attributes + the category's own, in display order.
+
+    No category → no fields. The common ones alone would be a half-filled
+    attribute set built on a category we don't know yet; the graph rebuilds
+    these via attributes_for() once she's told us which it is.
+    """
+    if not category:
+        return []
     spec = _load_attr_spec()
     return spec.get("common", []) + spec.get("categories", {}).get(category, {}).get("attributes", [])
 
@@ -276,8 +340,16 @@ Seller's words:
 {photo_instruction}
 
 STEP 1 — Pick the single best category from this list, matching the seller's words
-against the aliases (fuzzy match is fine; if unsure, choose the closest):
+against the aliases:
 {_category_hints()}
+
+Do NOT choose the closest one when you are unsure. Set "category" to null instead, and
+say so in "category_confidence". This category decides which Indian law applies to her
+— the labels she must print and whether she is asked for an FSSAI, BIS or AYUSH licence.
+Guessing does not help her: if you guess wrong she is told she is compliant when she is
+not. If you return null she is simply shown the list and picks it herself, which costs
+her one tap. Use "high" only when her words or the photo clearly indicate the category;
+otherwise "low".
 
 STEP 2 — Fill the structured attributes for THE CATEGORY YOU PICKED, using only that
 category's fields below. For a field marked [opt1|opt2|...], choose exactly one listed
@@ -300,7 +372,8 @@ Return STRICT JSON only, exactly these keys:
   "quantity": <integer number of pieces, or null if not stated>,
   "cost_price_inr": <integer rupee amount the seller stated, or null>,
   "material": "<main material, or null>",
-  "category": "<one of the category keys above>",
+  "category": "<one of the category keys above, or null if not clearly indicated>",
+  "category_confidence": "<high | low>",
   "photo_ok": <true or false>,
   "photo_issue": <short string or null>,
   "photo_authenticity": "<original | watermarked | stock_or_catalogue | likely_ai | unsure>",
@@ -318,7 +391,9 @@ Return STRICT JSON only, exactly these keys:
         result["fallback_reason"] = str(exc)
         return result
 
-    category = raw.get("category") or _pick_category(voice_text)
+    category = resolve_category(
+        raw.get("category"), voice_text, raw.get("category_confidence")
+    )
     quantity = raw.get("quantity")
     material = raw.get("material")
     product_name = raw.get("product_name") or "handmade product"
