@@ -212,6 +212,7 @@ npm --prefix frontend run dev -- --port 3001     # web  →  http://localhost:30
 | Session tokens | forged signature → 401 · expired → 401 · `''`/`nonsense`/`a.b` → 401. Browser: login → reload survives → tampered token auto-clears and bounces to `/login` |
 | Register / login | register → **201** + auto-login → lands on `/sell` as the new seller · duplicate phone → **409** · password < 8 → **422** · `GET /sellers/{id}` does **not** return `password_hash` · wrong password → **401**, no session stored · 6th failed attempt → **429** for 15 min · sign out → `/login`, token gone |
 | Login timing | wrong password vs unknown phone: **343ms vs 313ms** (noise). Before the dummy-hash fix it was **382ms vs 253ms** — `verify_password` short-circuited on a missing hash, so a fast reply revealed "no such seller" and undid the identical error message. Caught by measuring, not by reading |
+| Label vs listing (age) | Real run: teddy attributed **0-1.5 Years** while the label she was told to print said **"Age Grading: 3+ Years"** — same screen, a choking-hazard toy. Root cause: `niyam.run()` never received `product_attributes`, so it drafted the label blind and invented a grading. Now: label carries **her** value, and the disagreement is raised as the **first** approval item, styled as a warning ("Please check this before printing"), citing IS 9873. Survives the compliance-loop recheck (carried forward in `niyam_node` — the agent alone returns `[]` there, since the echoed label matches and the model isn't re-called) |
 | Her language at approval | Lakshmi (`ta`) → approval gate renders **Tamil** above the English, 2 Listen buttons, `/language/speak` → **200 `audio/wav`**. Same request as Ratna (`or`) → **Odia**. `preferred_language` had been collected since day one and used nowhere |
 | Missing details, answerable | "Add these details before publishing: Age Group" is now a tap: question in **her language** + Listen + tappable options + the same voice recorder + type fallback. Tamlish *"chinna kuzhandhaigalukku, rendu vayasu"* → **`1.5-3 Years`**; "purple sparkly nonsense" → **422**, refused not guessed; an enum answer never invents a sixth option. Stranger → 404 on both new routes. Published: `age_group: 1.5-3 Years`, `missing_attributes: []` |
 | Seller edits | Title + description + price editable at approval (the graph always accepted them; only the UI was missing). Through the real UI: her title, her description, ₹420 → all three in Mongo, `seller_overridden: true`, audit records `['description','price','title']`. Below break-even → warns, still lets her publish |
@@ -291,6 +292,22 @@ These are deliberate. Reversing one without understanding the reason will make t
 - **`GET /listings/{id}` is still open** — a guessed id exposes a seller's listing. Deliberate
   for now (the frontend reads back anonymous runs); an information-disclosure gap, not a
   publishing one.
+
+- **The printed label is still full of blanks the app could fill.** It tells her to print
+  `Mfr: <Manufacturer Name>, <Full Address>` and `BIS ISI Mark: <ISI License No.>` — while her
+  own profile already holds `packer_label: {name, address}` and `licenses: {fssai, bis}`.
+  `grep packer_label` across the code returns **nothing**: never read. Legal Metrology *requires*
+  the packer's name and address, so the label as printed is **not compliant** — the product's
+  central promise, handed back to her as a form to fill in by hand. Niyam is also never told
+  she has no BIS, so it can't say so. Third instance of the same pattern
+  (`preferred_language`, now `packer_label` + `licenses`): collected, seeded, never used.
+- **The crew asks questions she cannot answer.** "Confirm the exact height in centimetres"
+  renders as a bullet at the approval gate with no input. `dimensions` *is* an askable field but
+  `required: false`, so it never enters `missing_attributes` and the voice-answer chips skip it.
+- **Only title + description are translated.** Everything she must *act on* stays English: the
+  approval bullets, the checklist, **the label text itself**, the compliance/returns cards,
+  "high risk / size mismatch". She reads Tamil, then hits an English wall where it matters.
+- **Raw enum keys leak to her** — the UI shows `Licence needed: BIS_ISI_certification`.
 
 ### 🟡 Input / photo cases
 - Price **in words** ("do sau rupaye") — `_extract_rupees` is digits-only → falls to clarify (graceful).

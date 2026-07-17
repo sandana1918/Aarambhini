@@ -758,15 +758,31 @@ export default function SellPage() {
                         publish, or reject.
                       </p>
                       <ul className="mt-4 space-y-2">
-                        {result.approvals?.map((a) => (
-                          <li
-                            key={a.type}
-                            className="flex items-start gap-2.5 rounded-xl bg-canvas px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-2"
-                          >
-                            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
-                            {a.summary}
-                          </li>
-                        ))}
+                        {result.approvals?.map((a, i) =>
+                          a.type === 'conflict' ? (
+                            // The label disagrees with the listing. On a toy that's
+                            // a child-safety statement, so it can't look like the
+                            // routine "Publish this listing?" bullet next to it.
+                            <li
+                              key={`${a.type}-${i}`}
+                              className="flex items-start gap-2.5 rounded-xl border border-danger/40 bg-danger-bg px-3.5 py-2.5 text-[13px] leading-relaxed text-danger"
+                            >
+                              <Icon name="alert" size={15} className="mt-0.5 shrink-0" />
+                              <span>
+                                <strong className="font-bold">Please check this before printing.</strong>{' '}
+                                {a.summary}
+                              </span>
+                            </li>
+                          ) : (
+                            <li
+                              key={`${a.type}-${i}`}
+                              className="flex items-start gap-2.5 rounded-xl bg-canvas px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-2"
+                            >
+                              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                              {a.summary}
+                            </li>
+                          ),
+                        )}
                       </ul>
 
                       {/* She reads it in her own language before she's asked to

@@ -309,14 +309,26 @@ def daam_node(state) -> dict:
 
 def niyam_node(state) -> dict:
     s = state["suno"]
+    # The listing's own facts. Without these Niyam drafts the label blind and
+    # invents values that contradict the listing it is labelling.
+    attrs = state.get("product_attributes") or {}
     if _in_compliance_loop(state):
         tries = state.get("tries", 0) + 1
         ny = niyam_agent.run(
             s.get("category"), s.get("product_name"), s.get("quantity"),
             label_applied=True, label_text=state["compliance"].get("required_label_text"),
+            product_attributes=attrs,
         )
+        # The recheck echoes the existing label instead of redrafting, so it never
+        # re-derives conflicts — carry forward what the first pass found rather
+        # than letting a safety flag vanish on the second lap of the loop.
+        if not ny.get("conflicts"):
+            ny["conflicts"] = (state.get("compliance") or {}).get("conflicts", [])
         return {"compliance": ny, "tries": tries, "log": [(f"Niyam (recheck #{tries})", ny)]}
-    ny = niyam_agent.run(s.get("category"), s.get("product_name"), s.get("quantity"))
+    ny = niyam_agent.run(
+        s.get("category"), s.get("product_name"), s.get("quantity"),
+        product_attributes=attrs,
+    )
     return {"compliance": ny, "log": [("Niyam", ny)]}
 
 
@@ -379,6 +391,17 @@ def finalize_node(state) -> dict:
         {"type": "go_live", "summary": "Publish this listing?"},
         {"type": "price", "summary": f"Set price ₹{price['selling_price_inr']}?"},
     ]
+    # A label that contradicts the listing goes to the top of the gate, not into
+    # a checklist she scrolls past — on a toy this is a child-safety statement.
+    for c in (state.get("compliance") or {}).get("conflicts", []) or []:
+        approvals.insert(0, {
+            "type": "conflict",
+            "summary": (
+                f"Your listing says {c['field'].replace('_', ' ')} is "
+                f"\"{c.get('listing_says')}\", but the label needs "
+                f"\"{c.get('label_says')}\". {c.get('why', '')}".strip()
+            ),
+        })
     if w.get("needs_seller_confirmation"):
         approvals.append({"type": "confirm_attr",
                           "summary": w.get("confirmation_prompt") or "Confirm product detail?"})
