@@ -174,6 +174,38 @@ export async function approveListing(
   return json(res);
 }
 
+export type PendingField = {
+  key: string;
+  label: string;
+  type: string;
+  options: string[];
+  required: boolean;
+};
+
+/** The details still missing, with the key + options needed to answer them. */
+export async function getPendingAttributes(
+  id: string,
+): Promise<{ category: string | null; fields: PendingField[] }> {
+  const res = await fetch(`${API_BASE}/listings/${id}/pending-attributes`, {
+    headers: authHeaders(),
+  });
+  return json(res);
+}
+
+/** Her spoken answer -> a value this field accepts. Throws if it can't match. */
+export async function resolveAttribute(
+  id: string,
+  key: string,
+  spokenText: string,
+): Promise<{ key: string; value: string; provider: string }> {
+  const res = await fetch(`${API_BASE}/listings/${id}/attribute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ key, spoken_text: spokenText }),
+  });
+  return json(res);
+}
+
 export type Translation = { original: string; text: string; provider: string };
 
 /** English -> her language, for reading only. Defaults to her registered language. */

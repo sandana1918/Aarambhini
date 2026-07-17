@@ -111,6 +111,88 @@ def attributes_for(category, raw=None, material=None):
     return _finalize_attributes(category, raw, material)
 
 
+def missing_for(category, values):
+    """Which required fields are still empty -> their labels.
+
+    Needed after she fills one in at approval: merging her answer without
+    recomputing this leaves the listing saying a detail is missing that she
+    just provided.
+    """
+    return _missing_required(_attr_fields_for(category), values or {})
+
+
+def askable_fields(category):
+    """[{key, label, type, options, required}] she could still be asked about.
+
+    `missing_attributes` carries labels only ("Age Group"), which is enough to
+    show her but not to fill anything — this maps back to the key and, for an
+    enum, the exact options the marketplace accepts.
+    """
+    return [
+        {
+            "key": f["key"],
+            "label": f["label"],
+            "type": f.get("type", "text"),
+            "options": f.get("options") or [],
+            "required": bool(f.get("required")),
+        }
+        for f in _attr_fields_for(category)
+        if not _is_fixed(f)
+    ]
+
+
+def resolve_attribute_value(category, key, spoken_text):
+    """Her spoken answer -> a value this field will accept.
+
+    She says "for small children, about two years old"; the marketplace wants
+    exactly "1.5-3 Years". For an enum the model must pick one of the listed
+    options or nothing — never invent a sixth. Free-text fields keep her own
+    words, tidied.
+
+    Returns {"value": str|None, "provider": "gemini"|"verbatim"|"none"}.
+    """
+    field = next((f for f in askable_fields(category) if f["key"] == key), None)
+    said = (spoken_text or "").strip()
+    if not field or not said:
+        return {"value": None, "provider": "none"}
+
+    options = field["options"]
+    if options:
+        listed = "\n".join(f"- {o}" for o in options)
+        prompt = (
+            f"A seller was asked for the '{field['label']}' of her product and answered, "
+            f"in her own words:\n\"\"\"{said}\"\"\"\n\n"
+            f"Choose the ONE option that matches what she meant:\n{listed}\n\n"
+            'Return STRICT JSON: {"value": "<exactly one option above, or null if '
+            'her answer does not match any>"}. Never invent an option.'
+        )
+    else:
+        prompt = (
+            f"A seller was asked for the '{field['label']}' of her product and answered, "
+            f"in her own words:\n\"\"\"{said}\"\"\"\n\n"
+            "Return STRICT JSON: {\"value\": \"<her answer as a short marketplace field "
+            'value in English, or null if she gave no usable answer>"}. Keep her meaning; '
+            "do not embellish."
+        )
+
+    try:
+        raw = llm_json(prompt)
+        value = (raw or {}).get("value")
+        value = value.strip() if isinstance(value, str) else None
+        if options and value not in options:
+            value = None  # a hallucinated option is worse than asking again
+        if value:
+            return {"value": value, "provider": "gemini"}
+    except Exception:  # noqa: BLE001 - fall through to her own words
+        pass
+
+    # Model unavailable or unhelpful. For free text her words are still the
+    # best answer we have; for an enum we cannot honestly pick, so we don't.
+    if not options:
+        return {"value": said[:80], "provider": "verbatim"}
+    return {"value": None, "provider": "none"}
+
+
 # ------------------------------------------------------------- attribute spec
 def _attr_fields_for(category):
     """common attributes + the category's own, in display order.

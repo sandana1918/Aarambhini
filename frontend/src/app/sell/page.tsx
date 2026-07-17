@@ -8,6 +8,7 @@ import { AgentTimeline } from '@/components/AgentTimeline';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { ProductDetails } from '@/components/ProductDetails';
 import { ReviewInHerLanguage } from '@/components/ReviewInHerLanguage';
+import { FillMissingDetails } from '@/components/FillMissingDetails';
 import { Icon } from '@/components/icons';
 import { runListingStream, approveListing, clarifyListing, fetchMe } from '@/lib/api';
 import { clearSession, loadSession, type Session } from '@/lib/session';
@@ -36,6 +37,9 @@ export default function SellPage() {
   // state. Anything non-null is her edit, even when she clears it back to empty.
   const [editTitle, setEditTitle] = useState<string | null>(null);
   const [editDescription, setEditDescription] = useState<string | null>(null);
+  // Missing details she answered by voice, held until she publishes — the
+  // graph's checkpoint is the source of truth, so they ride in as edits.
+  const [attributeEdits, setAttributeEdits] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
   const [approving, setApproving] = useState(false);
   const [clarifyValue, setClarifyValue] = useState('');
@@ -85,6 +89,7 @@ export default function SellPage() {
     setEditPrice('');
     setEditTitle(null);
     setEditDescription(null);
+    setAttributeEdits({});
     setLiveSteps([]);
     try {
       const r = await runListingStream({ voiceText, marginPct: margin, photo }, (agent) =>
@@ -99,7 +104,13 @@ export default function SellPage() {
   }
 
   function buildEdits() {
-    const edits: { price?: number; title?: string; description?: string } = {};
+    const edits: {
+      price?: number;
+      title?: string;
+      description?: string;
+      attributes?: Record<string, string>;
+    } = {};
+    if (Object.keys(attributeEdits).length) edits.attributes = attributeEdits;
     const p = Number(editPrice);
     if (editPrice.trim() && Number.isFinite(p) && p > 0 && p !== result?.price?.selling_price_inr) {
       edits.price = Math.round(p);
@@ -763,6 +774,17 @@ export default function SellPage() {
                       <ReviewInHerLanguage
                         title={result.listing?.title}
                         description={result.listing?.description}
+                      />
+
+                      {/* The missing details, answerable by voice in her own
+                          language — not just listed at her in English. */}
+                      <FillMissingDetails
+                        listingId={result.id}
+                        missingLabels={result.missing_attributes ?? []}
+                        filled={attributeEdits}
+                        onFilled={(key, value) =>
+                          setAttributeEdits((prev) => ({ ...prev, [key]: value }))
+                        }
                       />
 
                       {/* Seller edits — resumed into the graph via Command(resume).

@@ -95,6 +95,12 @@ class ReturnReport(BaseModel):
     notes: Optional[str] = None
 
 
+class AttributeAnswer(BaseModel):
+    """Her spoken (or typed) answer to one missing product detail."""
+    key: str
+    spoken_text: str
+
+
 class TranslateRequest(BaseModel):
     """Texts to render in her language. `to` defaults to her preferred_language."""
     texts: list[str] = []

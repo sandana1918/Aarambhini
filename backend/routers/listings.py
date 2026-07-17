@@ -18,7 +18,7 @@ from fastapi.responses import StreamingResponse
 
 from ..auth import current_seller, optional_seller, require_listing_owner
 from ..db import get_db, LISTINGS, AUDIT_LOG
-from ..models import ApprovalDecision, ClarificationAnswers, ReturnReport
+from ..models import ApprovalDecision, AttributeAnswer, ClarificationAnswers, ReturnReport
 
 router = APIRouter(prefix="/listings", tags=["listings"])
 
@@ -280,6 +280,74 @@ async def transcribe(audio: UploadFile = File(...)):
     return {"text": text, "detected_via": result["provider"]}
 
 
+def _listing_category(doc: dict) -> Optional[str]:
+    return (doc.get("suno") or {}).get("category") or (doc.get("listing") or {}).get("category")
+
+
+@router.get("/{listing_id}/pending-attributes")
+async def pending_attributes(listing_id: str, seller_id: str = Depends(current_seller)):
+    """The details still missing, with the key + options needed to answer them.
+
+    `missing_attributes` on the listing is labels only — enough to show her,
+    not enough to fill. This maps each back to its field so she can answer one
+    by voice instead of being told what's missing and left there.
+    """
+    from agents import suno as suno_agent
+
+    db = get_db()
+    oid = _listing_oid(listing_id)
+    doc = await db[LISTINGS].find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    require_listing_owner(doc, seller_id)
+
+    category = _listing_category(doc)
+    values = doc.get("product_attributes") or {}
+    missing_labels = set(doc.get("missing_attributes") or [])
+
+    fields = [
+        f for f in suno_agent.askable_fields(category)
+        if f["label"] in missing_labels or not values.get(f["key"])
+    ]
+    # Missing-and-required first: those are what actually block a good listing.
+    fields.sort(key=lambda f: (f["label"] not in missing_labels, not f["required"], f["label"]))
+    return {"category": category, "fields": fields}
+
+
+@router.post("/{listing_id}/attribute")
+async def resolve_attribute(
+    listing_id: str,
+    answer: AttributeAnswer,
+    seller_id: str = Depends(current_seller),
+):
+    """Turn her spoken answer into a value this field accepts.
+
+    Deliberately does NOT write to the listing: the graph is paused at the
+    approval interrupt and its checkpoint is the source of truth, so the value
+    goes back to her and rides in with `edits.attributes` when she approves.
+    Writing here would leave the document and the graph disagreeing.
+    """
+    from agents import suno as suno_agent
+
+    db = get_db()
+    oid = _listing_oid(listing_id)
+    doc = await db[LISTINGS].find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    require_listing_owner(doc, seller_id)
+
+    category = _listing_category(doc)
+    result = await asyncio.to_thread(
+        suno_agent.resolve_attribute_value, category, answer.key, answer.spoken_text
+    )
+    if not result["value"]:
+        raise HTTPException(
+            status_code=422,
+            detail="Couldn't match that to an answer — please say it again.",
+        )
+    return {"key": answer.key, **result}
+
+
 @router.post("/{listing_id}/return")
 async def report_return(
     listing_id: str,
@@ -380,6 +448,9 @@ async def approve_listing(
         update["listing"] = result["listing"]
     if result.get("product_attributes"):
         update["product_attributes"] = result["product_attributes"]
+        # Persist alongside the attributes, never separately — the two disagreeing
+        # is how a listing ends up asking for a detail she already gave.
+        update["missing_attributes"] = result.get("missing_attributes", [])
     update["activity_log"] = [
         {"agent": name, "output": out} for name, out in result.get("log", [])
     ]

@@ -427,7 +427,13 @@ def approval_node(state) -> dict:
             listing["description"] = edits["description"]
         out["listing"] = listing
     if edits.get("attributes"):
-        out["product_attributes"] = {**(state.get("product_attributes") or {}), **edits["attributes"]}
+        merged = {**(state.get("product_attributes") or {}), **edits["attributes"]}
+        out["product_attributes"] = merged
+        # Recompute what's still missing — she just answered some of it, and
+        # leaving the old list would publish a listing that still asks her for
+        # a detail she has already given.
+        category = (state.get("suno") or {}).get("category")
+        out["missing_attributes"] = suno_agent.missing_for(category, merged)
 
     out["status"] = "published" if approved else "rejected_by_seller"
     out["seller_notes"] = decision.get("notes")

@@ -213,6 +213,7 @@ npm --prefix frontend run dev -- --port 3001     # web  →  http://localhost:30
 | Register / login | register → **201** + auto-login → lands on `/sell` as the new seller · duplicate phone → **409** · password < 8 → **422** · `GET /sellers/{id}` does **not** return `password_hash` · wrong password → **401**, no session stored · 6th failed attempt → **429** for 15 min · sign out → `/login`, token gone |
 | Login timing | wrong password vs unknown phone: **343ms vs 313ms** (noise). Before the dummy-hash fix it was **382ms vs 253ms** — `verify_password` short-circuited on a missing hash, so a fast reply revealed "no such seller" and undid the identical error message. Caught by measuring, not by reading |
 | Her language at approval | Lakshmi (`ta`) → approval gate renders **Tamil** above the English, 2 Listen buttons, `/language/speak` → **200 `audio/wav`**. Same request as Ratna (`or`) → **Odia**. `preferred_language` had been collected since day one and used nowhere |
+| Missing details, answerable | "Add these details before publishing: Age Group" is now a tap: question in **her language** + Listen + tappable options + the same voice recorder + type fallback. Tamlish *"chinna kuzhandhaigalukku, rendu vayasu"* → **`1.5-3 Years`**; "purple sparkly nonsense" → **422**, refused not guessed; an enum answer never invents a sixth option. Stranger → 404 on both new routes. Published: `age_group: 1.5-3 Years`, `missing_attributes: []` |
 | Seller edits | Title + description + price editable at approval (the graph always accepted them; only the UI was missing). Through the real UI: her title, her description, ₹420 → all three in Mongo, `seller_overridden: true`, audit records `['description','price','title']`. Below break-even → warns, still lets her publish |
 | Category gate | unmatched text → `None` (was `handicrafts_decor`) · hallucinated key `"food"` → rejected · `attributes_for(None)` → `{}` not a half-set · unknown → clarify asks with 13 options · known category → **0 gaps** (speak-once intact) · clarify resume applies her choice and **rebuilds** the category's attributes · a bogus key posted to `/clarify` is ignored. Live: crochet-teddy photo + matching words → `toys_games`, no interrupt, **BIS** correctly required |
 
@@ -349,7 +350,12 @@ These are deliberate. Reversing one without understanding the reason will make t
     request, so the *second* DB-touching request dies with `RuntimeError: Event loop is closed`.
     Use `with TestClient(app) as c:` (one loop for the block). This will bite on the Tier 3
     API tests immediately.
-13. **The frontend's React Compiler lint rejects a synchronous `setState` in a `useEffect` body**
+13. **`product_attributes` is keyed by `key` (`age_group`); `missing_attributes` holds LABELS
+    (`"Age Group"`)** — enough to show her, not enough to fill anything. `suno.askable_fields()`
+    maps back to the key + enum options. The two must always be written **together**: merging an
+    attribute without recomputing `suno.missing_for()` published a listing that still asked her
+    for a detail she had just given (fixed in `approval_node` and the approve route).
+14. **The frontend's React Compiler lint rejects a synchronous `setState` in a `useEffect` body**
     (`react-hooks/set-state-in-effect`) — `npx tsc --noEmit` passes and it still fails lint.
     Put the work in an async callback inside the effect. Note `next lint` is gone in Next 16;
     run `npx eslint src --ext .ts,.tsx`.
