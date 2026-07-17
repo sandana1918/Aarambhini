@@ -212,6 +212,7 @@ npm --prefix frontend run dev -- --port 3001     # web  →  http://localhost:30
 | Session tokens | forged signature → 401 · expired → 401 · `''`/`nonsense`/`a.b` → 401. Browser: login → reload survives → tampered token auto-clears and bounces to `/login` |
 | Register / login | register → **201** + auto-login → lands on `/sell` as the new seller · duplicate phone → **409** · password < 8 → **422** · `GET /sellers/{id}` does **not** return `password_hash` · wrong password → **401**, no session stored · 6th failed attempt → **429** for 15 min · sign out → `/login`, token gone |
 | Login timing | wrong password vs unknown phone: **343ms vs 313ms** (noise). Before the dummy-hash fix it was **382ms vs 253ms** — `verify_password` short-circuited on a missing hash, so a fast reply revealed "no such seller" and undid the identical error message. Caught by measuring, not by reading |
+| Seller-only fields not invented | She said only *"teddy, 4 pieces, ₹200, small size"* — yet the listing showed **Age Group: 0-1.5 Years**, invented, and that value drove the printed safety label. `listing_attributes.json` has always marked these `infer:"seller"` but only `net_quantity` was withheld from the model. Now every `infer:"seller"` field is withheld **and** dropped if returned anyway: `age_group` → `None` → asked. Same hole would have published `purity: 22K` and **`certification: "BIS Hallmark"`** she may not hold, and a `shelf_life` for food nobody measured |
 | Label vs listing (age) | Real run: teddy attributed **0-1.5 Years** while the label she was told to print said **"Age Grading: 3+ Years"** — same screen, a choking-hazard toy. Root cause: `niyam.run()` never received `product_attributes`, so it drafted the label blind and invented a grading. Now: label carries **her** value, and the disagreement is raised as the **first** approval item, styled as a warning ("Please check this before printing"), citing IS 9873. Survives the compliance-loop recheck (carried forward in `niyam_node` — the agent alone returns `[]` there, since the echoed label matches and the model isn't re-called) |
 | Her language at approval | Lakshmi (`ta`) → approval gate renders **Tamil** above the English, 2 Listen buttons, `/language/speak` → **200 `audio/wav`**. Same request as Ratna (`or`) → **Odia**. `preferred_language` had been collected since day one and used nowhere |
 | Missing details, answerable | "Add these details before publishing: Age Group" is now a tap: question in **her language** + Listen + tappable options + the same voice recorder + type fallback. Tamlish *"chinna kuzhandhaigalukku, rendu vayasu"* → **`1.5-3 Years`**; "purple sparkly nonsense" → **422**, refused not guessed; an enum answer never invents a sixth option. Stranger → 404 on both new routes. Published: `age_group: 1.5-3 Years`, `missing_attributes: []` |
@@ -243,6 +244,12 @@ These are deliberate. Reversing one without understanding the reason will make t
    destroy the "speak once" promise. Everything else gets safe defaults + a checklist.
 10. **`net_quantity` = units the BUYER gets per order (default 1)**, NOT her stock count.
     The model is explicitly told not to fill it.
+10b. **`infer` in `listing_attributes.json` is a contract, not a hint.** `photo` = the model may
+    read it; `voice` = it may hear it in her words; **`seller` = only she knows it — never
+    guess**. A guessed `age_group` on a choking-hazard toy, a guessed `purity` on gold, a
+    guessed `BIS Hallmark`: these are fabrications with her name on them. Seller-only fields are
+    withheld from the prompt *and* dropped if the model returns them anyway, so they surface as
+    a question she answers by voice.
 11. **Vivran was merged into Suno** — one vision call instead of reading the photo twice.
 12. **Compliance is guidance, not legal advice.** Every rule carries `needs_legal_review: true`.
 13. **Wapsi learns ONLY from `return_events` on this platform** — never another marketplace's data.

@@ -110,6 +110,7 @@ export function ReviewInHerLanguage({
 }) {
   const [data, setData] = useState<{ language: string; translations: Translation[] } | null>(null);
   const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const texts = [title ?? '', description ?? ''].filter(Boolean);
@@ -118,18 +119,41 @@ export function ReviewInHerLanguage({
     (async () => {
       try {
         const r = await translateTexts(texts);
-        if (active) setData(r);
+        if (active) {
+          setData(r);
+          setFailed(false);
+        }
       } catch {
-        if (active) setFailed(true); // stay silent; the English is right there
+        if (active) setFailed(true);
       }
     })();
     return () => {
       active = false;
     };
-  }, [title, description]);
+  }, [title, description, attempt]);
+
+  // Say so rather than disappear. A seller who can't read English and gets an
+  // empty space has no way to tell "nothing to check here" from "this broke" —
+  // silence is the worst of the three outcomes.
+  if (failed && !data) {
+    return (
+      <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-line bg-canvas px-3.5 py-2.5">
+        <p className="text-[12px] leading-relaxed text-muted">
+          Couldn&apos;t load your language just now — the English below is still what publishes.
+        </p>
+        <button
+          type="button"
+          onClick={() => setAttempt((n) => n + 1)}
+          className="shrink-0 rounded-lg border border-brand-200 bg-surface px-2.5 py-1 text-[11px] font-semibold text-brand transition hover:bg-brand-50"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   // English-speaking sellers need no second copy of their own listing.
-  if (failed || !data || data.language === 'en') return null;
+  if (!data || data.language === 'en') return null;
 
   const byOriginal = new Map(data.translations.map((t) => [t.original, t]));
   const anyTranslated = data.translations.some((t) => t.provider !== 'none');

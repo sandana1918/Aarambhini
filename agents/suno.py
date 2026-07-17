@@ -216,13 +216,38 @@ def _is_fixed(f):
 _MODEL_SKIP = {"net_quantity"}
 
 
+def _seller_only(f):
+    """Marked infer:"seller" — only she can know this; a guess is a fabrication.
+
+    The spec has always said which fields are hers: age_group, size, purity,
+    certification, shelf_life, gross_weight, dimensions. Nothing enforced it, so
+    the model filled them anyway — a seller who said only "teddy bear, 4 pieces,
+    ₹200, small size" had "Age Group: 0-1.5 Years" invented for her, and that
+    invented value then drove the printed safety label on a choking-hazard toy.
+    The same hole would claim "BIS Hallmark" certification she may not hold, or
+    a shelf life for food nobody measured.
+
+    These now go unanswered to `missing_attributes`, where she is asked — one
+    tap, in her own language, rather than a plausible-looking guess.
+    """
+    return f.get("infer") == "seller"
+
+
+def _model_may_fill(f):
+    """The model reads the photo and hears her words; it does not invent facts."""
+    return not _is_fixed(f) and not _seller_only(f) and f["key"] not in _MODEL_SKIP
+
+
 def _compact_attr_spec():
-    """Per-category askable fields (with enum options) to inject into the prompt."""
+    """Per-category fields the MODEL may fill, with enum options, for the prompt.
+
+    Seller-only fields are withheld entirely — showing them invites a guess.
+    """
     spec = _load_attr_spec()
-    common = [f for f in spec.get("common", []) if not _is_fixed(f) and f["key"] not in _MODEL_SKIP]
+    common = [f for f in spec.get("common", []) if _model_may_fill(f)]
     lines = []
     for cat, body in spec.get("categories", {}).items():
-        fields = [f for f in common + body.get("attributes", []) if f["key"] not in _MODEL_SKIP]
+        fields = [f for f in common + body.get("attributes", []) if _model_may_fill(f)]
         parts = []
         for f in fields:
             opts = f.get("options")
@@ -279,6 +304,10 @@ def _finalize_attributes(category, raw, material):
             attributes[key] = f.get("value")
         elif key in _MODEL_SKIP:
             attributes[key] = det.get(key)  # derived, never the model's guess
+        elif _seller_only(f):
+            # Hers to state. Left empty on purpose so it reaches her as a
+            # question instead of arriving as a confident fabrication.
+            attributes[key] = None
         else:
             v = raw.get(key)
             attributes[key] = v if v not in (None, "", []) else det.get(key)

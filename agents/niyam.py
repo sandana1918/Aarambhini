@@ -48,6 +48,24 @@ def _known_values(product_attributes):
     return "\n".join(lines)
 
 
+def _match_field(reported, product_attributes):
+    """Map a model-named field onto a real attribute key, or None.
+
+    It answers with whatever it likes — "age_grading" where the listing calls it
+    "age_group" — and a mismatch would quote the listing as saying "None".
+    """
+    attrs = product_attributes or {}
+    key = (reported or "").strip().lower().replace(" ", "_")
+    if key in attrs:
+        return key
+    # Same words, different arrangement: age_grading -> age_group.
+    tokens = {t for t in key.split("_") if t}
+    for k in attrs:
+        if tokens & {t for t in k.split("_") if t}:
+            return k
+    return None
+
+
 def _age_conflict(product_attributes, label_text):
     """Does the drafted label grade the age differently from the listing?
 
@@ -129,13 +147,24 @@ Return STRICT JSON only:
             raw = llm_json(prompt)
             required_label_text = raw.get("required_label_text", "")
             for c in raw.get("conflicts") or []:
-                if isinstance(c, dict) and c.get("field"):
-                    conflicts.append({
-                        "field": c["field"],
-                        "listing_says": (product_attributes or {}).get(c["field"]),
-                        "label_says": c.get("label_says"),
-                        "why": c.get("why") or "The law may require a different value here.",
-                    })
+                if not isinstance(c, dict) or not c.get("field"):
+                    continue
+                # The model names the field freely ("age_grading" for age_group),
+                # so match it to a real attribute key before quoting the listing.
+                field = _match_field(c["field"], product_attributes)
+                listed = (product_attributes or {}).get(field) if field else None
+                if not listed:
+                    # She hasn't stated a value, so there is nothing to
+                    # contradict — it's a blank she is already being asked for,
+                    # and "your listing says None" is noise that trains her to
+                    # ignore the one warning that matters.
+                    continue
+                conflicts.append({
+                    "field": field,
+                    "listing_says": listed,
+                    "label_says": c.get("label_says"),
+                    "why": c.get("why") or "The law may require a different value here.",
+                })
         except Exception:
             # Deterministic fallback so the loop never stalls without the LLM.
             required_label_text = "; ".join(f"<{f}>" for f in required_labels)
