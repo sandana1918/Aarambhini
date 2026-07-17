@@ -1,0 +1,50 @@
+# Render blueprint for the Aarambhini API.
+#
+# Render is one of several fits (Railway, Fly, Cloud Run are equivalent). What
+# matters is that it is a LONG-RUNNING service: a listing takes ~15s across six
+# agents and streams SSE throughout, which a serverless function would cut off.
+#
+# The frontend is NOT here — it goes to Vercel. See DEPLOY.md.
+services:
+  - type: web
+    name: aarambhini-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # sync:false = set by hand in the dashboard, never committed.
+      - key: MONGODB_URI
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SARVAM_API_KEY
+        sync: false
+      # Mandatory outside dev: backend/auth.py REFUSES to issue session tokens
+      # without it, because an unset secret would make every token forgeable by
+      # anyone who reads this repo. Generate with:
+      #   python -c "import secrets; print(secrets.token_urlsafe(32))"
+      - key: SESSION_SECRET
+        sync: false
+      # The exact frontend origin(s). Leaving this blank does NOT mean "allow
+      # all" — it falls back to a localhost-only regex, so the deployed site
+      # would be refused by its own API.
+      - key: CORS_ORIGINS
+        sync: false
+      - key: APP_ENV
+        value: prod
+      - key: DB_NAME
+        value: aarambhini
+      - key: GEMINI_MODEL
+        value: gemini-flash-lite-latest
+      - key: STT_PROVIDER
+        value: sarvam
+      - key: SARVAM_STT_MODEL
+        value: saarika:v2.5
+      - key: SARVAM_TRANSLATE_MODEL
+        value: mayura:v1
+      - key: SARVAM_TTS_MODEL
+        value: bulbul:v2
+      - key: SARVAM_TTS_SPEAKER
+        value: anushka

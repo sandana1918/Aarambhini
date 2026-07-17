@@ -1,0 +1,37 @@
+# Secrets — never bake these into an image. An image layer is readable by
+# anyone who can pull it, and deleting the file in a later layer does NOT
+# remove it from the earlier one.
+.env
+.env.*
+!.env.example
+
+# The frontend deploys to Vercel, not into this image.
+frontend/
+
+# Local Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Version control + editor/agent config
+.git/
+.github/
+.claude/
+.vscode/
+
+# Local scratch, docs and deliverables the API never reads
+*.docx
+~$*
+docs/
+*.md
+!README.md
+
+# Loose test images left in the repo root
+*.jpg
+*.jpeg
+*.webp
+*.png

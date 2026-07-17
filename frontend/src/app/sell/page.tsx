@@ -9,6 +9,8 @@ import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { ProductDetails } from '@/components/ProductDetails';
 import { ReviewInHerLanguage } from '@/components/ReviewInHerLanguage';
 import { FillMissingDetails } from '@/components/FillMissingDetails';
+import { Stepper, type StepId } from '@/components/Stepper';
+import { Tabs, type Tab } from '@/components/Tabs';
 import { Icon } from '@/components/icons';
 import { runListingStream, approveListing, clarifyListing, fetchMe } from '@/lib/api';
 import { clearSession, loadSession, type Session } from '@/lib/session';
@@ -21,6 +23,120 @@ const RISK: Record<string, { dot: string; text: string; bg: string }> = {
   medium: { dot: 'bg-saffron', text: 'text-warn', bg: 'bg-warn-bg' },
   high: { dot: 'bg-danger', text: 'text-danger', bg: 'bg-danger-bg' },
 };
+
+/** Turn a raw rule key into something a seller can read: BIS_ISI_certification. */
+function licenceLabel(key: string) {
+  return key.replace(/_/g, ' ');
+}
+
+/** The reference panes for step 3 — detail she may want, not detail she must see. */
+function detailTabs(
+  result: RunResult,
+  risk: string,
+  riskStyle: { dot: string; text: string; bg: string },
+): Tab[] {
+  const missingCount = result.missing_attributes?.length ?? 0;
+  return [
+    {
+      id: 'details',
+      label: 'Product details',
+      badge: missingCount ? String(missingCount) : null,
+      content: (
+        <ProductDetails attributes={result.product_attributes} missing={result.missing_attributes} />
+      ),
+    },
+    {
+      id: 'compliance',
+      label: 'Compliance',
+      badge: result.compliance?.required_licenses?.length ? '!' : null,
+      content: (
+        <div>
+          <p
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+              result.compliance?.compliance_ok ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'
+            }`}
+          >
+            <Icon name={result.compliance?.compliance_ok ? 'check' : 'alert'} size={12} />
+            {result.compliance?.compliance_ok ? 'Labels applied' : 'Action needed'}
+          </p>
+          {!!result.compliance?.required_licenses?.length && (
+            <p className="mt-3 rounded-lg bg-warn-bg px-2.5 py-2 text-[12px] font-medium text-warn">
+              Licence needed: {result.compliance.required_licenses.map(licenceLabel).join(', ')}
+            </p>
+          )}
+          {result.compliance?.required_label_text && (
+            <div className="mt-3">
+              <p className="text-[11px] font-semibold text-muted">Label to print</p>
+              <p className="mt-1 rounded-lg bg-canvas px-2.5 py-2 text-[11.5px] leading-relaxed text-ink-2">
+                {result.compliance.required_label_text}
+              </p>
+            </div>
+          )}
+          <p className="mt-3 text-[11px] leading-relaxed text-muted">
+            {result.compliance?.gst_note}
+          </p>
+        </div>
+      ),
+    },
+    {
+      id: 'returns',
+      label: 'Returns',
+      content: (
+        <div>
+          <p
+            className={`inline-block rounded-full px-2.5 py-1 text-[11px] font-bold ${riskStyle.bg} ${riskStyle.text}`}
+          >
+            {risk} risk
+          </p>
+          <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
+            {result.returns?.top_return_reason}
+          </p>
+          {result.returns?.learned_from_returns ? (
+            <p className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700">
+              <Icon name="refresh" size={11} />
+              Learned from {result.returns.learned_from_returns} past returns in this category
+            </p>
+          ) : (
+            <p className="mt-3 text-[11px] text-muted">
+              No return history yet — reasoned from category patterns.
+            </p>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'packaging',
+      label: 'Packaging',
+      content: (
+        <div>
+          <p className="text-[13px] leading-relaxed text-ink-2">
+            {result.packaging_plan?.primary_pack}
+          </p>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
+            → {result.packaging_plan?.outer_pack}
+          </p>
+          {result.packaging_plan?.shipping_label && (
+            <p className="mt-3 rounded-lg bg-canvas px-2.5 py-1.5 text-center font-mono text-[10px] font-bold tracking-wide text-ink-2">
+              {result.packaging_plan.shipping_label}
+            </p>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'activity',
+      label: `Agent activity (${result.activity_log?.length ?? 0})`,
+      content: (
+        <div>
+          <p className="mb-3 text-[11px] text-muted">
+            Tap any step to see exactly what that agent returned.
+          </p>
+          <AgentTimeline log={result.activity_log ?? []} />
+        </div>
+      ),
+    },
+  ];
+}
 
 export default function SellPage() {
   const [voiceText, setVoiceText] = useState(HINDI_EXAMPLE);
@@ -215,30 +331,44 @@ export default function SellPage() {
   const risk = result?.returns?.risk_level ?? 'low';
   const riskStyle = RISK[risk] ?? RISK.low;
 
+  // The step follows the run, so it can never disagree with what's on screen:
+  // no result → tell us; crew running → the crew; anything back → review.
+  const step: StepId = loading ? 2 : result ? 3 : 1;
+
+  function startOver() {
+    setResult(null);
+    setPublished(false);
+    setRejected(false);
+    setError(null);
+    setLiveSteps([]);
+  }
+
   return (
     <>
       <Header />
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-8">
-        <div className="mb-7">
+      <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-8">
+        <div className="mb-5">
           <h1 className="text-2xl font-bold text-ink">Create your listing</h1>
           <p className="mt-1.5 text-[14px] text-muted">
             Speak in your language, add one photo — the crew does the rest.
           </p>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-start">
-          {/* ── INPUT ─────────────────────────────── */}
+        {session && <Stepper current={step} onBack={startOver} canGoBack={!!result} />}
+
+        <div className="space-y-6">
+          {/* ── STEP 1 — TELL US ──────────────────── */}
           {!session ? (
             /* Either still checking, or already being redirected to /login. */
-            <section className="card p-5 lg:sticky lg:top-24">
+            <section className="card p-5">
               <div className="flex items-center gap-3">
                 <span className="h-5 w-5 animate-spin rounded-full border-[3px] border-brand-100 border-t-brand" />
                 <p className="text-[13px] text-muted">Checking your session…</p>
               </div>
             </section>
-          ) : (
-          <section className="card p-5 lg:sticky lg:top-24">
+          ) : step !== 1 ? null : (
+          <section className="card p-5">
             <div className="mb-4 flex items-center justify-between gap-2 rounded-xl bg-canvas px-3 py-2">
               <span className="min-w-0 truncate text-[12px] text-ink-2">
                 Signed in as <strong className="text-ink">{session.name}</strong>
@@ -338,24 +468,9 @@ export default function SellPage() {
           </section>
           )}
 
-          {/* ── OUTPUT ────────────────────────────── */}
+          {/* ── STEPS 2 & 3 ───────────────────────── */}
           <div className="min-w-0 space-y-6">
-            {!result && !loading && (
-              <div className="card grid place-items-center px-6 py-20 text-center">
-                <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-50 text-brand">
-                  <Icon name="sparkles" size={26} />
-                </span>
-                <p className="mt-4 text-[15px] font-semibold text-ink">
-                  Your agent crew is standing by
-                </p>
-                <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-muted">
-                  Hit <strong>Run Aarambhini</strong> and watch six agents write, price, legally
-                  check and returns-proof your listing — rejecting each other&apos;s work until
-                  it&apos;s right.
-                </p>
-              </div>
-            )}
-
+            {/* Step 2 — the crew, on its own stage. */}
             {loading && (
               <div className="card px-6 py-10">
                 <div className="flex items-center gap-3">
@@ -594,82 +709,11 @@ export default function SellPage() {
                   </div>
                 </section>
 
-                {/* Meesho-style structured attributes */}
-                <ProductDetails
-                  attributes={result.product_attributes}
-                  missing={result.missing_attributes}
-                />
-
-                {/* Compliance / Returns / Packaging */}
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="card p-5">
-                    <div className="flex items-center gap-2 text-brand">
-                      <Icon name="scale" size={18} />
-                      <p className="text-[13px] font-bold text-ink">Compliance</p>
-                    </div>
-                    <p
-                      className={`mt-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                        result.compliance?.compliance_ok
-                          ? 'bg-ok-bg text-ok'
-                          : 'bg-warn-bg text-warn'
-                      }`}
-                    >
-                      <Icon name={result.compliance?.compliance_ok ? 'check' : 'alert'} size={12} />
-                      {result.compliance?.compliance_ok ? 'Labels applied' : 'Action needed'}
-                    </p>
-                    {!!result.compliance?.required_licenses?.length && (
-                      <p className="mt-3 rounded-lg bg-warn-bg px-2.5 py-2 text-[11px] font-medium text-warn">
-                        Licence needed: {result.compliance.required_licenses.join(', ')}
-                      </p>
-                    )}
-                    <p className="mt-3 text-[11px] leading-relaxed text-muted">
-                      {result.compliance?.gst_note}
-                    </p>
-                  </div>
-
-                  <div className="card p-5">
-                    <div className="flex items-center gap-2 text-brand">
-                      <Icon name="refresh" size={18} />
-                      <p className="text-[13px] font-bold text-ink">Returns</p>
-                    </div>
-                    <p
-                      className={`mt-3 inline-block rounded-full px-2.5 py-1 text-[11px] font-bold ${riskStyle.bg} ${riskStyle.text}`}
-                    >
-                      {risk} risk
-                    </p>
-                    <p className="mt-3 text-[12px] leading-relaxed text-ink-2">
-                      {result.returns?.top_return_reason}
-                    </p>
-                    {result.returns?.learned_from_returns ? (
-                      <p className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-brand-50 px-2 py-1 text-[10.5px] font-medium text-brand-700">
-                        <Icon name="refresh" size={11} />
-                        Learned from {result.returns.learned_from_returns} past returns in this category
-                      </p>
-                    ) : (
-                      <p className="mt-2.5 text-[10.5px] text-muted">
-                        No return history yet — reasoned from category patterns.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="card p-5">
-                    <div className="flex items-center gap-2 text-brand">
-                      <Icon name="package" size={18} />
-                      <p className="text-[13px] font-bold text-ink">Packaging</p>
-                    </div>
-                    <p className="mt-3 text-[12px] leading-relaxed text-ink-2">
-                      {result.packaging_plan?.primary_pack}
-                    </p>
-                    <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
-                      → {result.packaging_plan?.outer_pack}
-                    </p>
-                    {result.packaging_plan?.shipping_label && (
-                      <p className="mt-3 rounded-lg bg-canvas px-2.5 py-1.5 text-center font-mono text-[10px] font-bold tracking-wide text-ink-2">
-                        {result.packaging_plan.shipping_label}
-                      </p>
-                    )}
-                  </div>
-                </div>
+                {/* Reference panes. Everything she must act on — the conflict
+                    warning, the missing details, the checklist and the gate —
+                    stays on the page below; an unopened tab reads as "no
+                    problem here", so nothing safety-bearing lives in here. */}
+                <Tabs tabs={detailTabs(result, risk, riskStyle)} />
 
                 {/* Checklist */}
                 {!!result.action_checklist?.length && (
@@ -687,22 +731,6 @@ export default function SellPage() {
                     </ul>
                   </section>
                 )}
-
-                {/* Activity log */}
-                <section className="card p-5">
-                  <div className="mb-4 flex items-center justify-between">
-                    <div>
-                      <p className="text-[13px] font-bold text-ink">Agent activity</p>
-                      <p className="mt-0.5 text-[11px] text-muted">
-                        Tap any step to see exactly what that agent returned.
-                      </p>
-                    </div>
-                    <span className="rounded-full bg-canvas px-2.5 py-1 font-mono text-[11px] text-muted">
-                      {result.activity_log?.length ?? 0} steps
-                    </span>
-                  </div>
-                  <AgentTimeline log={result.activity_log ?? []} />
-                </section>
 
                 {/* Approval gate */}
                 <section

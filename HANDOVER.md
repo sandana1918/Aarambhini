@@ -93,7 +93,9 @@ frontend/src/
   app/page.tsx         landing
   app/login/page.tsx   login (phone + password)
   app/register/page.tsx  registration → auto-login → /sell
-  app/sell/page.tsx    THE main flow — redirects to /login without a valid session
+  app/sell/page.tsx    THE main flow — 3 steps; redirects to /login without a session
+  components/Stepper.tsx  1 Tell us → 2 The crew works → 3 Review & publish
+  components/Tabs.tsx     reference panes for step 3 (NOT for anything she vouches for)
   components/          Chrome (header/logo) · VoiceRecorder · AgentTimeline · ProductDetails · icons
   lib/                 api.ts · session.ts (token store) · types.ts · recorder.ts (mic → 16kHz WAV)
 docs/                  ARCHITECTURE.md + hld-diagram.png + agent-flow-diagram.png
@@ -256,6 +258,13 @@ These are deliberate. Reversing one without understanding the reason will make t
 13. **Wapsi learns ONLY from `return_events` on this platform** — never another marketplace's data.
 14. **Positioning: on-ramp, not a storefront.** A public browse page contradicts the pitch;
     a "buyer's-eye preview" or a seller "my listings" view does not.
+14a. **Steps, not tabs — and never a tab over anything she vouches for.** The flow is
+    sequential (she can't review a listing before the crew writes one), so it's a 3-step
+    wizard: tabs imply peers you may visit in any order, steps say "you are here". Inside
+    step 3, tabs hold only *reference* panes (details · compliance · returns · packaging ·
+    activity). The conflict warning, missing details, checklist and approval gate stay on the
+    page: **an unopened tab reads as "no problem here"**, and "nothing publishes without her
+    approval" is hollow if what she approves is hidden one click away.
 14b. **Answer in the language she just SPOKE, not the one she registered with.**
     `detected_language` (this voice note) beats `preferred_language` (a tick at registration):
     a seller registered Tamil who records a Hindi note is speaking Hindi *today*, and replying
@@ -343,7 +352,24 @@ These are deliberate. Reversing one without understanding the reason will make t
 - **Real marketplace publishing** — `published` is an internal status only.
 - Multi-marketplace formatters; scheduled re-scoring; Bhashini option; seller accounts/auth.
 
-### Deployment notes
+### Deployment (config written, not yet deployed)
+- **`Dockerfile` (build context = repo ROOT), `render.yaml`, `DEPLOY.md`, `.dockerignore`** are in.
+  The image was **built and run locally against Atlas**: `/health` connected in prod mode, login
+  200, a **full agent run** completed (Gemini vision + Daam's pandas pricing + loops), and the
+  **SSE stream arrived incrementally** (13 steps over 8s, not buffered) — so buffering, if any,
+  will come only from a host proxy (DEPLOY.md has the curl test).
+- `/health` now reports **`degraded` + `config_error`** when `SESSION_SECRET` is missing in prod,
+  instead of booting green and 500-ing on every login. Render's `healthCheckPath: /health`
+  catches it. Verified in-container: correct config → `ok` + login 200; no secret → `degraded`.
+- **Two deploy blockers, both fail-safe:** `SESSION_SECRET` is mandatory outside dev (auth.py
+  raises), and the 7 demo sellers share `aarambhini-demo` — seed **reference data only** in prod.
+- `.dockerignore` keeps `.env` out of the image (an image layer is readable by anyone who can
+  pull it). `streamlit`/`qrcode` are NOT on the API path (only `app.py` / `utils/trust_qr.py`);
+  `pandas` IS (Daam, Packaging), so it ships.
+- Docker CMD uses `["sh","-c","exec uvicorn …"]` so uvicorn is PID 1's child and gets SIGTERM on
+  redeploy; `--workers 1` because the login throttle is per-process (see §11 trap on scaling).
+
+### Deployment notes (background)
 - Frontend → **Vercel**. Backend → **Render/Railway/Fly/Cloud Run** (must be a long-running
   service, **not serverless** — a run takes ~15s and would hit function timeouts).
 - **SSE buffering** is the big risk: many hosts/proxies buffer, which kills the live agent stream.
