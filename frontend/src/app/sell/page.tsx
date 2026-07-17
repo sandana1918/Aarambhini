@@ -790,6 +790,7 @@ export default function SellPage() {
                       <ReviewInHerLanguage
                         title={result.listing?.title}
                         description={result.listing?.description}
+                        detectedLanguage={result.suno?.detected_language}
                       />
 
                       {/* The missing details, answerable by voice in her own
@@ -801,6 +802,7 @@ export default function SellPage() {
                         onFilled={(key, value) =>
                           setAttributeEdits((prev) => ({ ...prev, [key]: value }))
                         }
+                        detectedLanguage={result.suno?.detected_language}
                       />
 
                       {/* Seller edits — resumed into the graph via Command(resume).

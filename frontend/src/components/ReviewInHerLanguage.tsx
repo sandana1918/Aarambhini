@@ -101,12 +101,32 @@ function Block({
   );
 }
 
+/**
+ * The language to talk back in.
+ *
+ * What she just spoke beats what she ticked at registration: a seller
+ * registered as Tamil who records a Hindi voice note is speaking Hindi today,
+ * and answering her in Tamil is the same failure as answering in English —
+ * a language she didn't choose *right now*.
+ *
+ * English input is the exception. Typing English doesn't mean she wants an
+ * English review (she may have typed it because the box was there), so fall
+ * back to her registered language and let the server decide.
+ */
+export function spokenOrPreferred(detected?: string | null) {
+  const lang = (detected || '').trim().toLowerCase().slice(0, 2);
+  return lang && lang !== 'en' ? lang : undefined;
+}
+
 export function ReviewInHerLanguage({
   title,
   description,
+  detectedLanguage,
 }: {
   title?: string | null;
   description?: string | null;
+  /** From Suno — the language of this voice note. */
+  detectedLanguage?: string | null;
 }) {
   const [data, setData] = useState<{ language: string; translations: Translation[] } | null>(null);
   const [failed, setFailed] = useState(false);
@@ -118,7 +138,7 @@ export function ReviewInHerLanguage({
     let active = true;
     (async () => {
       try {
-        const r = await translateTexts(texts);
+        const r = await translateTexts(texts, spokenOrPreferred(detectedLanguage));
         if (active) {
           setData(r);
           setFailed(false);
@@ -130,7 +150,7 @@ export function ReviewInHerLanguage({
     return () => {
       active = false;
     };
-  }, [title, description, attempt]);
+  }, [title, description, detectedLanguage, attempt]);
 
   // Say so rather than disappear. A seller who can't read English and gets an
   // empty space has no way to tell "nothing to check here" from "this broke" —

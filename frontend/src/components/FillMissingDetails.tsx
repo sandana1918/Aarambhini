@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Icon } from '@/components/icons';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
+import { spokenOrPreferred } from '@/components/ReviewInHerLanguage';
 import {
   getPendingAttributes,
   resolveAttribute,
@@ -66,11 +67,14 @@ export function FillMissingDetails({
   missingLabels,
   filled,
   onFilled,
+  detectedLanguage,
 }: {
   listingId: string;
   missingLabels: string[];
   filled: Record<string, string>;
   onFilled: (key: string, value: string) => void;
+  /** Ask in the language she just spoke, not the one she registered with. */
+  detectedLanguage?: string | null;
 }) {
   const [fields, setFields] = useState<PendingField[] | null>(null);
   const [open, setOpen] = useState<PendingField | null>(null);
@@ -103,7 +107,7 @@ export function FillMissingDetails({
     (async () => {
       const texts = [questionFor(open), ...open.options];
       try {
-        const r = await translateTexts(texts);
+        const r = await translateTexts(texts, spokenOrPreferred(detectedLanguage));
         if (!active) return;
         setLang(r.language);
         const map: Record<string, string> = {};
@@ -118,7 +122,7 @@ export function FillMissingDetails({
     return () => {
       active = false;
     };
-  }, [open]);
+  }, [open, detectedLanguage]);
 
   async function submit(spoken: string) {
     if (!open || !spoken.trim()) return;
