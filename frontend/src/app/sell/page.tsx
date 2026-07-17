@@ -7,6 +7,8 @@ import { Header } from '@/components/Chrome';
 import { AgentTimeline } from '@/components/AgentTimeline';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { ProductDetails } from '@/components/ProductDetails';
+import { ReviewInHerLanguage } from '@/components/ReviewInHerLanguage';
+import { FillMissingDetails } from '@/components/FillMissingDetails';
 import { Icon } from '@/components/icons';
 import { runListingStream, approveListing, clarifyListing, fetchMe } from '@/lib/api';
 import { clearSession, loadSession, type Session } from '@/lib/session';
@@ -31,9 +33,17 @@ export default function SellPage() {
   const [published, setPublished] = useState(false);
   const [rejected, setRejected] = useState(false);
   const [editPrice, setEditPrice] = useState<string>('');
+  // null = untouched, so the field shows the crew's text without copying it into
+  // state. Anything non-null is her edit, even when she clears it back to empty.
+  const [editTitle, setEditTitle] = useState<string | null>(null);
+  const [editDescription, setEditDescription] = useState<string | null>(null);
+  // Missing details she answered by voice, held until she publishes — the
+  // graph's checkpoint is the source of truth, so they ride in as edits.
+  const [attributeEdits, setAttributeEdits] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
   const [approving, setApproving] = useState(false);
   const [clarifyValue, setClarifyValue] = useState('');
+  const [clarifyCategory, setClarifyCategory] = useState('');
   const [clarifying, setClarifying] = useState(false);
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const router = useRouter();
@@ -77,6 +87,9 @@ export default function SellPage() {
     setRejected(false);
     setNotes('');
     setEditPrice('');
+    setEditTitle(null);
+    setEditDescription(null);
+    setAttributeEdits({});
     setLiveSteps([]);
     try {
       const r = await runListingStream({ voiceText, marginPct: margin, photo }, (agent) =>
@@ -91,11 +104,23 @@ export default function SellPage() {
   }
 
   function buildEdits() {
-    const edits: { price?: number } = {};
+    const edits: {
+      price?: number;
+      title?: string;
+      description?: string;
+      attributes?: Record<string, string>;
+    } = {};
+    if (Object.keys(attributeEdits).length) edits.attributes = attributeEdits;
     const p = Number(editPrice);
     if (editPrice.trim() && Number.isFinite(p) && p > 0 && p !== result?.price?.selling_price_inr) {
       edits.price = Math.round(p);
     }
+    // Only send what she actually changed — the graph treats every present key
+    // as a deliberate override and stamps the listing accordingly.
+    const t = editTitle?.trim();
+    if (t && t !== result?.listing?.title) edits.title = t;
+    const d = editDescription?.trim();
+    if (d && d !== result?.listing?.description) edits.description = d;
     return Object.keys(edits).length ? edits : undefined;
   }
 
@@ -106,9 +131,22 @@ export default function SellPage() {
     const edits = buildEdits();
     try {
       await approveListing(result.id, true, notes || undefined, edits);
-      // Reflect the published price (possibly edited) in the confirmation.
-      if (edits?.price && result.price) {
-        setResult({ ...result, price: { ...result.price, selling_price_inr: edits.price } });
+      // Reflect what actually went live in the confirmation — showing her the
+      // crew's wording after she rewrote it would be a small lie.
+      if (edits) {
+        setResult({
+          ...result,
+          price: edits.price && result.price
+            ? { ...result.price, selling_price_inr: edits.price }
+            : result.price,
+          listing: result.listing
+            ? {
+                ...result.listing,
+                title: edits.title ?? result.listing.title,
+                description: edits.description ?? result.listing.description,
+              }
+            : result.listing,
+        });
       }
       setPublished(true);
     } catch (e) {
@@ -120,17 +158,31 @@ export default function SellPage() {
 
   async function onClarify() {
     if (!result) return;
-    const v = Number(clarifyValue);
-    if (!clarifyValue.trim() || !Number.isFinite(v) || v <= 0) {
-      setError('Please enter a valid amount in ₹.');
-      return;
+    const answers: { cost_price_inr?: number; category?: string } = {};
+
+    if (priceQuestion) {
+      const v = Number(clarifyValue);
+      if (!clarifyValue.trim() || !Number.isFinite(v) || v <= 0) {
+        setError('Please enter a valid amount in ₹.');
+        return;
+      }
+      answers.cost_price_inr = Math.round(v);
     }
+    if (categoryQuestion) {
+      if (!clarifyCategory) {
+        setError('Please choose what best describes your product.');
+        return;
+      }
+      answers.category = clarifyCategory;
+    }
+
     setClarifying(true);
     setError(null);
     try {
-      const r = await clarifyListing(result.id, { cost_price_inr: Math.round(v) });
+      const r = await clarifyListing(result.id, answers);
       setResult(r);
       setClarifyValue('');
+      setClarifyCategory('');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not submit that answer.');
     } finally {
@@ -155,7 +207,11 @@ export default function SellPage() {
   const ready = result?.status === 'ready_for_approval';
   const retake = result?.status === 'needs_retake';
   const needsClarification = result?.status === 'needs_clarification';
-  const question = result?.clarification?.questions?.[0];
+  const questions = result?.clarification?.questions ?? [];
+  const priceQuestion = questions.find((q) => q.field === 'cost_price_inr');
+  // Asked when the category couldn't be determined — it decides which law
+  // applies, so it's answered here rather than guessed.
+  const categoryQuestion = questions.find((q) => q.field === 'category');
   const risk = result?.returns?.risk_level ?? 'low';
   const riskStyle = RISK[risk] ?? RISK.low;
 
@@ -364,34 +420,72 @@ export default function SellPage() {
                     <Icon name="help" size={20} />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[15px] font-bold text-ink">One quick thing</p>
-                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-2">
-                      {question?.prompt ?? 'We need one more detail before continuing.'}
+                    <p className="text-[15px] font-bold text-ink">
+                      {questions.length > 1 ? 'Two quick things' : 'One quick thing'}
                     </p>
-                    <div className="mt-4 flex gap-2.5">
-                      <div className="relative flex-1">
-                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-muted">
-                          ₹
-                        </span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          autoFocus
-                          value={clarifyValue}
-                          onChange={(e) => setClarifyValue(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && onClarify()}
-                          placeholder="e.g. 250"
-                          className="w-full rounded-xl border border-line bg-canvas py-3 pl-7 pr-3 text-[14px] text-ink outline-none focus:border-brand focus:bg-surface focus:ring-4 focus:ring-brand-100"
-                        />
+
+                    {priceQuestion && (
+                      <div className="mt-2">
+                        <p className="text-[13.5px] leading-relaxed text-ink-2">
+                          {priceQuestion.prompt}
+                        </p>
+                        <div className="relative mt-3">
+                          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-muted">
+                            ₹
+                          </span>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            autoFocus
+                            value={clarifyValue}
+                            onChange={(e) => setClarifyValue(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && !categoryQuestion && onClarify()}
+                            placeholder="e.g. 250"
+                            className="w-full rounded-xl border border-line bg-canvas py-3 pl-7 pr-3 text-[14px] text-ink outline-none focus:border-brand focus:bg-surface focus:ring-4 focus:ring-brand-100"
+                          />
+                        </div>
                       </div>
-                      <button
-                        onClick={onClarify}
-                        disabled={clarifying}
-                        className="rounded-xl bg-brand px-6 py-3 text-[14px] font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
-                      >
-                        {clarifying ? 'Continuing…' : 'Continue'}
-                      </button>
-                    </div>
+                    )}
+
+                    {categoryQuestion && (
+                      <div className={priceQuestion ? 'mt-5' : 'mt-2'}>
+                        <p className="text-[13.5px] leading-relaxed text-ink-2">
+                          {categoryQuestion.prompt}
+                        </p>
+                        <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
+                          {categoryQuestion.options?.map((opt) => {
+                            const picked = clarifyCategory === opt.key;
+                            return (
+                              <button
+                                key={opt.key}
+                                type="button"
+                                onClick={() => setClarifyCategory(opt.key)}
+                                aria-pressed={picked}
+                                className={`rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition ${
+                                  picked
+                                    ? 'border-brand bg-brand-50 text-brand-700'
+                                    : 'border-line bg-canvas text-ink-2 hover:border-brand-200 hover:bg-brand-50/40'
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                          This decides which labels and licences the law asks of you — a wrong
+                          guess here is the one mistake that could get your listing pulled.
+                        </p>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={onClarify}
+                      disabled={clarifying}
+                      className="mt-4 w-full rounded-xl bg-brand px-6 py-3 text-[14px] font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60 sm:w-auto"
+                    >
+                      {clarifying ? 'Continuing…' : 'Continue'}
+                    </button>
                     <p className="mt-2.5 text-[11px] text-muted">
                       The crew paused here and will pick up exactly where it left off.
                     </p>
@@ -660,24 +754,97 @@ export default function SellPage() {
                         Nothing goes live without your tap
                       </p>
                       <p className="mt-1 text-[12px] text-muted">
-                        Review, edit anything, then publish — or reject.
+                        Change the title, description or price if the crew got it wrong — then
+                        publish, or reject.
                       </p>
                       <ul className="mt-4 space-y-2">
-                        {result.approvals?.map((a) => (
-                          <li
-                            key={a.type}
-                            className="flex items-start gap-2.5 rounded-xl bg-canvas px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-2"
-                          >
-                            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
-                            {a.summary}
-                          </li>
-                        ))}
+                        {result.approvals?.map((a, i) =>
+                          a.type === 'conflict' ? (
+                            // The label disagrees with the listing. On a toy that's
+                            // a child-safety statement, so it can't look like the
+                            // routine "Publish this listing?" bullet next to it.
+                            <li
+                              key={`${a.type}-${i}`}
+                              className="flex items-start gap-2.5 rounded-xl border border-danger/40 bg-danger-bg px-3.5 py-2.5 text-[13px] leading-relaxed text-danger"
+                            >
+                              <Icon name="alert" size={15} className="mt-0.5 shrink-0" />
+                              <span>
+                                <strong className="font-bold">Please check this before printing.</strong>{' '}
+                                {a.summary}
+                              </span>
+                            </li>
+                          ) : (
+                            <li
+                              key={`${a.type}-${i}`}
+                              className="flex items-start gap-2.5 rounded-xl bg-canvas px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-2"
+                            >
+                              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                              {a.summary}
+                            </li>
+                          ),
+                        )}
                       </ul>
 
-                      {/* Seller edits — resumed into the graph via Command(resume) */}
-                      <div className="mt-4 grid gap-3 rounded-xl border border-line bg-canvas p-3.5">
+                      {/* She reads it in her own language before she's asked to
+                          vouch for it — the English below is what publishes. */}
+                      <ReviewInHerLanguage
+                        title={result.listing?.title}
+                        description={result.listing?.description}
+                        detectedLanguage={result.suno?.detected_language}
+                      />
+
+                      {/* The missing details, answerable by voice in her own
+                          language — not just listed at her in English. */}
+                      <FillMissingDetails
+                        listingId={result.id}
+                        missingLabels={result.missing_attributes ?? []}
+                        filled={attributeEdits}
+                        onFilled={(key, value) =>
+                          setAttributeEdits((prev) => ({ ...prev, [key]: value }))
+                        }
+                        detectedLanguage={result.suno?.detected_language}
+                      />
+
+                      {/* Seller edits — resumed into the graph via Command(resume).
+                          The crew wrote these words; she gets the last one. */}
+                      <div className="mt-4 grid gap-3.5 rounded-xl border border-line bg-canvas p-3.5">
+                        <div>
+                          <label
+                            htmlFor="edit-title"
+                            className="block text-[12px] font-semibold text-ink-2"
+                          >
+                            Title
+                          </label>
+                          <input
+                            id="edit-title"
+                            type="text"
+                            value={editTitle ?? result.listing?.title ?? ''}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            className="mt-1.5 w-full rounded-lg border border-line bg-surface px-2.5 py-2 text-[13px] text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand-100"
+                          />
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor="edit-description"
+                            className="block text-[12px] font-semibold text-ink-2"
+                          >
+                            Description
+                          </label>
+                          <textarea
+                            id="edit-description"
+                            rows={4}
+                            value={editDescription ?? result.listing?.description ?? ''}
+                            onChange={(e) => setEditDescription(e.target.value)}
+                            className="mt-1.5 w-full resize-y rounded-lg border border-line bg-surface px-2.5 py-2 text-[13px] leading-relaxed text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand-100"
+                          />
+                          <p className="mt-1 text-[10.5px] leading-relaxed text-muted">
+                            These are your words to change — the crew only drafted them.
+                          </p>
+                        </div>
+
                         <label className="flex items-center justify-between text-[12px] font-semibold text-ink-2">
-                          Adjust price (₹)
+                          Price (₹)
                           <input
                             type="number"
                             inputMode="numeric"
@@ -687,6 +854,20 @@ export default function SellPage() {
                             className="w-28 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-right text-[13px] text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand-100"
                           />
                         </label>
+                        {/* Her break-even is deterministic; selling under it loses her money. */}
+                        {(() => {
+                          const p = Number(editPrice);
+                          const floor = result.price?.discount_floor_inr;
+                          if (!editPrice.trim() || !Number.isFinite(p) || !floor || p >= floor) return null;
+                          return (
+                            <p className="-mt-1 rounded-lg bg-warn-bg px-2.5 py-1.5 text-[11px] leading-relaxed text-warn">
+                              {/* One template string, not JSX text around expressions —
+                                  the space before the dash got eaten otherwise. */}
+                              {`₹${p} is below your break-even of ₹${floor} — you'd lose money on every sale. You can still publish it if you mean to.`}
+                            </p>
+                          );
+                        })()}
+
                         <input
                           type="text"
                           value={notes}

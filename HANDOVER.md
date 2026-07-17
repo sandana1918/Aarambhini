@@ -212,6 +212,13 @@ npm --prefix frontend run dev -- --port 3001     # web  →  http://localhost:30
 | Session tokens | forged signature → 401 · expired → 401 · `''`/`nonsense`/`a.b` → 401. Browser: login → reload survives → tampered token auto-clears and bounces to `/login` |
 | Register / login | register → **201** + auto-login → lands on `/sell` as the new seller · duplicate phone → **409** · password < 8 → **422** · `GET /sellers/{id}` does **not** return `password_hash` · wrong password → **401**, no session stored · 6th failed attempt → **429** for 15 min · sign out → `/login`, token gone |
 | Login timing | wrong password vs unknown phone: **343ms vs 313ms** (noise). Before the dummy-hash fix it was **382ms vs 253ms** — `verify_password` short-circuited on a missing hash, so a fast reply revealed "no such seller" and undid the identical error message. Caught by measuring, not by reading |
+| Seller-only fields not invented | She said only *"teddy, 4 pieces, ₹200, small size"* — yet the listing showed **Age Group: 0-1.5 Years**, invented, and that value drove the printed safety label. `listing_attributes.json` has always marked these `infer:"seller"` but only `net_quantity` was withheld from the model. Now every `infer:"seller"` field is withheld **and** dropped if returned anyway: `age_group` → `None` → asked. Same hole would have published `purity: 22K` and **`certification: "BIS Hallmark"`** she may not hold, and a `shelf_life` for food nobody measured |
+| Label vs listing (age) | Real run: teddy attributed **0-1.5 Years** while the label she was told to print said **"Age Grading: 3+ Years"** — same screen, a choking-hazard toy. Root cause: `niyam.run()` never received `product_attributes`, so it drafted the label blind and invented a grading. Now: label carries **her** value, and the disagreement is raised as the **first** approval item, styled as a warning ("Please check this before printing"), citing IS 9873. Survives the compliance-loop recheck (carried forward in `niyam_node` — the agent alone returns `[]` there, since the echoed label matches and the model isn't re-called) |
+| Her language at approval | Lakshmi (`ta`) → approval gate renders **Tamil** above the English, 2 Listen buttons, `/language/speak` → **200 `audio/wav`**. Same request as Ratna (`or`) → **Odia**. `preferred_language` had been collected since day one and used nowhere |
+| Spoken language wins | The **Tamil-registered** account recording a **Hindi** note now gets the review in **Hindi** (`हस्तनिर्मित ऑफ-व्हाइट सूती क्रोचेट टेडी बियर`), zero Tamil on the page, and Listen requests `lang: "hi"`. Previously it answered in her *registered* Tamil while Suno's `detected_language: hi` sat unused in a decorative chip |
+| Missing details, answerable | "Add these details before publishing: Age Group" is now a tap: question in **her language** + Listen + tappable options + the same voice recorder + type fallback. Tamlish *"chinna kuzhandhaigalukku, rendu vayasu"* → **`1.5-3 Years`**; "purple sparkly nonsense" → **422**, refused not guessed; an enum answer never invents a sixth option. Stranger → 404 on both new routes. Published: `age_group: 1.5-3 Years`, `missing_attributes: []` |
+| Seller edits | Title + description + price editable at approval (the graph always accepted them; only the UI was missing). Through the real UI: her title, her description, ₹420 → all three in Mongo, `seller_overridden: true`, audit records `['description','price','title']`. Below break-even → warns, still lets her publish |
+| Category gate | unmatched text → `None` (was `handicrafts_decor`) · hallucinated key `"food"` → rejected · `attributes_for(None)` → `{}` not a half-set · unknown → clarify asks with 13 options · known category → **0 gaps** (speak-once intact) · clarify resume applies her choice and **rebuilds** the category's attributes · a bogus key posted to `/clarify` is ignored. Live: crochet-teddy photo + matching words → `toys_games`, no interrupt, **BIS** correctly required |
 
 ---
 
@@ -223,6 +230,9 @@ These are deliberate. Reversing one without understanding the reason will make t
    `price = cost + shipping + overhead + margin`; `discount_floor = break-even`.
 2. **Every LLM agent has a deterministic fallback** → a run degrades, never hard-fails.
 3. **One model seam (`llm.py`).** Swapping Gemini/Sarvam → Bhashini/Whisper touches ONE file.
+   Now also `translate()` (Sarvam Mayura) and `speak()` (Sarvam Bulbul TTS) — same key as STT.
+   Both **degrade to the original text / no audio** rather than raising: a failed translation
+   must never blank the text she is approving.
 4. **Sarvam is STT primary** — India-first, handles code-mixing (Hinglish/Tamlish) and noisy
    phone audio. A demo seller speaks **Odia**, which rules out most alternatives.
 5. **Audio normalised to 16 kHz mono WAV in the browser** — no server ffmpeg; every STT accepts it.
@@ -235,20 +245,50 @@ These are deliberate. Reversing one without understanding the reason will make t
    destroy the "speak once" promise. Everything else gets safe defaults + a checklist.
 10. **`net_quantity` = units the BUYER gets per order (default 1)**, NOT her stock count.
     The model is explicitly told not to fill it.
+10b. **`infer` in `listing_attributes.json` is a contract, not a hint.** `photo` = the model may
+    read it; `voice` = it may hear it in her words; **`seller` = only she knows it — never
+    guess**. A guessed `age_group` on a choking-hazard toy, a guessed `purity` on gold, a
+    guessed `BIS Hallmark`: these are fabrications with her name on them. Seller-only fields are
+    withheld from the prompt *and* dropped if the model returns them anyway, so they surface as
+    a question she answers by voice.
 11. **Vivran was merged into Suno** — one vision call instead of reading the photo twice.
 12. **Compliance is guidance, not legal advice.** Every rule carries `needs_legal_review: true`.
 13. **Wapsi learns ONLY from `return_events` on this platform** — never another marketplace's data.
 14. **Positioning: on-ramp, not a storefront.** A public browse page contradicts the pitch;
     a "buyer's-eye preview" or a seller "my listings" view does not.
+14b. **Answer in the language she just SPOKE, not the one she registered with.**
+    `detected_language` (this voice note) beats `preferred_language` (a tick at registration):
+    a seller registered Tamil who records a Hindi note is speaking Hindi *today*, and replying
+    in Tamil is the same failure as replying in English — a language she didn't choose now.
+    The one exception is English input → fall back to her registered language, since typing
+    English doesn't mean she wants an English review. See `spokenOrPreferred()`.
+15. **The listing publishes in ENGLISH; the review is in HER language.** Buyers and the
+    marketplace need English, so that stays the artifact. But asking her to approve English she
+    can't read makes "nothing publishes without her approval" hollow — it *is* the problem this
+    product exists to solve. So the approval gate shows her language on top, the exact English
+    that publishes underneath, and a Listen button (TTS) because she may speak Tamil fluently
+    and still not read it. **Never translate the compliance label text itself** — Legal
+    Metrology expects the printed label in English/Hindi; translate the *explanation* of it.
+    If a translation is wrong she'd be approving something she never saw, which is worse than
+    English-only, so the English stays visible and is labelled as authoritative.
 
 ---
 
 ## 10. Known gaps — the audited answer to "all types of cases"
 
 ### 🔴 High risk (can actually harm a seller)
-- **Category misclassification → wrong law.** The jute bag flipped between `handloom_textiles`
-  and `bags_leather` across runs. If food lands in `handicrafts`, **Niyam never asks for FSSAI**.
-  This is the single highest-risk failure.
+- **Category misclassification → wrong law.** *(Silent fallback fixed; the model's own
+  judgement is still trusted.)* `_pick_category` used to `return "handicrafts_decor"` when no
+  alias matched — so a seller whose words missed the food aliases silently became a handicraft,
+  and handicrafts need no FSSAI. Proven: `niyam.run('handicrafts_decor', …)` → **no licences**;
+  `niyam.run('food_packaged', …)` → **FSSAI**. That fallback was the difference.
+  Now: no silent default (returns `None`), unrecognised model keys are rejected, and an unknown
+  category becomes a **blocking clarify question** offering all 13 categories.
+  **Still open:** a confidently *wrong* model answer passes through. Suno now returns
+  `category_confidence` and a low-confidence guess her words don't corroborate is sent to her —
+  but this is unit-tested only. On the one live case tried, the model answered "high", so the
+  gate has never been observed firing. If the model always says "high" it buys nothing; the
+  stronger fix is reconciling the photo's category against the text's and asking on disagreement.
 - **A missing licence does not block publishing.** `compliance_ok = (not required_labels) or
   label_applied` — licences (FSSAI/BIS/AYUSH) are warnings only. A food seller with no FSSAI can publish.
 - ~~**No auth at all.**~~ **Fixed.** Real register/login (phone + password, `hashlib.scrypt`,
@@ -266,6 +306,22 @@ These are deliberate. Reversing one without understanding the reason will make t
 - **`GET /listings/{id}` is still open** — a guessed id exposes a seller's listing. Deliberate
   for now (the frontend reads back anonymous runs); an information-disclosure gap, not a
   publishing one.
+
+- **The printed label is still full of blanks the app could fill.** It tells her to print
+  `Mfr: <Manufacturer Name>, <Full Address>` and `BIS ISI Mark: <ISI License No.>` — while her
+  own profile already holds `packer_label: {name, address}` and `licenses: {fssai, bis}`.
+  `grep packer_label` across the code returns **nothing**: never read. Legal Metrology *requires*
+  the packer's name and address, so the label as printed is **not compliant** — the product's
+  central promise, handed back to her as a form to fill in by hand. Niyam is also never told
+  she has no BIS, so it can't say so. Third instance of the same pattern
+  (`preferred_language`, now `packer_label` + `licenses`): collected, seeded, never used.
+- **The crew asks questions she cannot answer.** "Confirm the exact height in centimetres"
+  renders as a bullet at the approval gate with no input. `dimensions` *is* an askable field but
+  `required: false`, so it never enters `missing_attributes` and the voice-answer chips skip it.
+- **Only title + description are translated.** Everything she must *act on* stays English: the
+  approval bullets, the checklist, **the label text itself**, the compliance/returns cards,
+  "high risk / size mismatch". She reads Tamil, then hits an English wall where it matters.
+- **Raw enum keys leak to her** — the UI shows `Licence needed: BIS_ISI_certification`.
 
 ### 🟡 Input / photo cases
 - Price **in words** ("do sau rupaye") — `_extract_rupees` is digits-only → falls to clarify (graceful).
@@ -325,7 +381,12 @@ These are deliberate. Reversing one without understanding the reason will make t
     request, so the *second* DB-touching request dies with `RuntimeError: Event loop is closed`.
     Use `with TestClient(app) as c:` (one loop for the block). This will bite on the Tier 3
     API tests immediately.
-13. **The frontend's React Compiler lint rejects a synchronous `setState` in a `useEffect` body**
+13. **`product_attributes` is keyed by `key` (`age_group`); `missing_attributes` holds LABELS
+    (`"Age Group"`)** — enough to show her, not enough to fill anything. `suno.askable_fields()`
+    maps back to the key + enum options. The two must always be written **together**: merging an
+    attribute without recomputing `suno.missing_for()` published a listing that still asked her
+    for a detail she had just given (fixed in `approval_node` and the approve route).
+14. **The frontend's React Compiler lint rejects a synchronous `setState` in a `useEffect` body**
     (`react-hooks/set-state-in-effect`) — `npx tsc --noEmit` passes and it still fails lint.
     Put the work in an async callback inside the effect. Note `next lint` is gone in Next 16;
     run `npx eslint src --ext .ts,.tsx`.

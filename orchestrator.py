@@ -181,6 +181,19 @@ def _blocking_gaps(state) -> list:
             "prompt": "We couldn't hear a price. How much does one piece cost you to "
                       "make, or what price do you want to sell at? Enter the amount in ₹.",
         })
+    # An unknown category is a blocking gap because it decides which law applies.
+    # Guessing here is how food ends up filed as a handicraft and never gets
+    # asked for an FSSAI licence — the seller would publish believing she is
+    # compliant. This is the one extra question worth breaking "speak once" for.
+    if not suno.get("category"):
+        gaps.append({
+            "field": "category",
+            "type": "choice",
+            "options": suno_agent.known_categories(),
+            "prompt": "Which of these best describes what you make? The labels and "
+                      "licences the law requires depend on this, so I'd rather ask "
+                      "than guess.",
+        })
     return gaps
 
 
@@ -205,6 +218,19 @@ def clarify_node(state) -> dict:
             out["suno"] = suno
         except (TypeError, ValueError):
             pass
+
+    # She told us the category, so rebuild the attribute set — it is
+    # category-specific and Suno had nothing to build it from.
+    chosen = answers.get("category")
+    if chosen and chosen in {c["key"] for c in suno_agent.known_categories()}:
+        suno["category"] = chosen
+        out["suno"] = suno
+        attrs, missing = suno_agent.attributes_for(
+            chosen, state.get("product_attributes"), suno.get("material")
+        )
+        out["product_attributes"] = attrs
+        out["missing_attributes"] = missing
+
     out["log"] = [("Seller clarification", {"answers": answers})]
     return out
 
@@ -283,14 +309,26 @@ def daam_node(state) -> dict:
 
 def niyam_node(state) -> dict:
     s = state["suno"]
+    # The listing's own facts. Without these Niyam drafts the label blind and
+    # invents values that contradict the listing it is labelling.
+    attrs = state.get("product_attributes") or {}
     if _in_compliance_loop(state):
         tries = state.get("tries", 0) + 1
         ny = niyam_agent.run(
             s.get("category"), s.get("product_name"), s.get("quantity"),
             label_applied=True, label_text=state["compliance"].get("required_label_text"),
+            product_attributes=attrs,
         )
+        # The recheck echoes the existing label instead of redrafting, so it never
+        # re-derives conflicts — carry forward what the first pass found rather
+        # than letting a safety flag vanish on the second lap of the loop.
+        if not ny.get("conflicts"):
+            ny["conflicts"] = (state.get("compliance") or {}).get("conflicts", [])
         return {"compliance": ny, "tries": tries, "log": [(f"Niyam (recheck #{tries})", ny)]}
-    ny = niyam_agent.run(s.get("category"), s.get("product_name"), s.get("quantity"))
+    ny = niyam_agent.run(
+        s.get("category"), s.get("product_name"), s.get("quantity"),
+        product_attributes=attrs,
+    )
     return {"compliance": ny, "log": [("Niyam", ny)]}
 
 
@@ -353,6 +391,17 @@ def finalize_node(state) -> dict:
         {"type": "go_live", "summary": "Publish this listing?"},
         {"type": "price", "summary": f"Set price ₹{price['selling_price_inr']}?"},
     ]
+    # A label that contradicts the listing goes to the top of the gate, not into
+    # a checklist she scrolls past — on a toy this is a child-safety statement.
+    for c in (state.get("compliance") or {}).get("conflicts", []) or []:
+        approvals.insert(0, {
+            "type": "conflict",
+            "summary": (
+                f"Your listing says {c['field'].replace('_', ' ')} is "
+                f"\"{c.get('listing_says')}\", but the label needs "
+                f"\"{c.get('label_says')}\". {c.get('why', '')}".strip()
+            ),
+        })
     if w.get("needs_seller_confirmation"):
         approvals.append({"type": "confirm_attr",
                           "summary": w.get("confirmation_prompt") or "Confirm product detail?"})
@@ -401,7 +450,13 @@ def approval_node(state) -> dict:
             listing["description"] = edits["description"]
         out["listing"] = listing
     if edits.get("attributes"):
-        out["product_attributes"] = {**(state.get("product_attributes") or {}), **edits["attributes"]}
+        merged = {**(state.get("product_attributes") or {}), **edits["attributes"]}
+        out["product_attributes"] = merged
+        # Recompute what's still missing — she just answered some of it, and
+        # leaving the old list would publish a listing that still asks her for
+        # a detail she has already given.
+        category = (state.get("suno") or {}).get("category")
+        out["missing_attributes"] = suno_agent.missing_for(category, merged)
 
     out["status"] = "published" if approved else "rejected_by_seller"
     out["seller_notes"] = decision.get("notes")

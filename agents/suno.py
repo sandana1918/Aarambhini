@@ -46,17 +46,163 @@ def _category_hints():
     return "\n".join(lines)
 
 
+def known_categories():
+    """[{key, label}] — the only categories Niyam has law for.
+
+    Used to offer the seller a choice when the category can't be determined.
+    """
+    return [
+        {"key": key, "label": val.get("label") or key}
+        for key, val in _load_rules()["categories"].items()
+    ]
+
+
+def _is_known_category(key):
+    return isinstance(key, str) and key in _load_rules()["categories"]
+
+
 def _pick_category(voice_text):
+    """-> a category key, or None when nothing matches.
+
+    None is the important part. This used to return "handicrafts_decor" when no
+    alias matched, which meant a seller whose words missed the food aliases
+    silently became a handicraft — and handicrafts require no FSSAI, so Niyam
+    would never ask for it and she'd publish food believing she was compliant.
+    A wrong category is wrong *law*, so an unknown one has to reach her as a
+    question (see _blocking_gaps) rather than be guessed here.
+
+    Note this is substring-first-match over dict order, so it is a hint, not a
+    classification: "jute bag" legitimately matches both handloom and bags.
+    """
     text = voice_text.lower()
     for key, val in _load_rules()["categories"].items():
         if any(alias.lower() in text for alias in val.get("aliases", [])):
             return key
-    return "handicrafts_decor"
+    return None
+
+
+def resolve_category(raw_category, voice_text, confidence=None):
+    """The model's category if it's real AND trustworthy, else the alias hint, else None.
+
+    Two ways this returns None — both meaning "ask her":
+
+    * The model returned an unrecognised key. It must not reach Niyam, which
+      would find no rules for it and report no labels or licences at all.
+    * The model said "low" and her own words don't corroborate it. A confident
+      guess is the dangerous case: asked to describe "this thing I make at
+      home", the model answered `toys_games` — nothing in her words said toy.
+      An uncorroborated low-confidence guess is worth one tap from her.
+
+    An alias match in her own words counts as corroboration, so a low-confidence
+    label she effectively said herself still passes without a question.
+    """
+    hint = _pick_category(voice_text)
+    if _is_known_category(raw_category):
+        if str(confidence).lower() == "low" and hint != raw_category:
+            return None
+        return raw_category
+    return hint
+
+
+def attributes_for(category, raw=None, material=None):
+    """Public seam so the graph can rebuild attributes once a clarified
+    category is known — they're category-specific and were computed before.
+    """
+    return _finalize_attributes(category, raw, material)
+
+
+def missing_for(category, values):
+    """Which required fields are still empty -> their labels.
+
+    Needed after she fills one in at approval: merging her answer without
+    recomputing this leaves the listing saying a detail is missing that she
+    just provided.
+    """
+    return _missing_required(_attr_fields_for(category), values or {})
+
+
+def askable_fields(category):
+    """[{key, label, type, options, required}] she could still be asked about.
+
+    `missing_attributes` carries labels only ("Age Group"), which is enough to
+    show her but not to fill anything — this maps back to the key and, for an
+    enum, the exact options the marketplace accepts.
+    """
+    return [
+        {
+            "key": f["key"],
+            "label": f["label"],
+            "type": f.get("type", "text"),
+            "options": f.get("options") or [],
+            "required": bool(f.get("required")),
+        }
+        for f in _attr_fields_for(category)
+        if not _is_fixed(f)
+    ]
+
+
+def resolve_attribute_value(category, key, spoken_text):
+    """Her spoken answer -> a value this field will accept.
+
+    She says "for small children, about two years old"; the marketplace wants
+    exactly "1.5-3 Years". For an enum the model must pick one of the listed
+    options or nothing — never invent a sixth. Free-text fields keep her own
+    words, tidied.
+
+    Returns {"value": str|None, "provider": "gemini"|"verbatim"|"none"}.
+    """
+    field = next((f for f in askable_fields(category) if f["key"] == key), None)
+    said = (spoken_text or "").strip()
+    if not field or not said:
+        return {"value": None, "provider": "none"}
+
+    options = field["options"]
+    if options:
+        listed = "\n".join(f"- {o}" for o in options)
+        prompt = (
+            f"A seller was asked for the '{field['label']}' of her product and answered, "
+            f"in her own words:\n\"\"\"{said}\"\"\"\n\n"
+            f"Choose the ONE option that matches what she meant:\n{listed}\n\n"
+            'Return STRICT JSON: {"value": "<exactly one option above, or null if '
+            'her answer does not match any>"}. Never invent an option.'
+        )
+    else:
+        prompt = (
+            f"A seller was asked for the '{field['label']}' of her product and answered, "
+            f"in her own words:\n\"\"\"{said}\"\"\"\n\n"
+            "Return STRICT JSON: {\"value\": \"<her answer as a short marketplace field "
+            'value in English, or null if she gave no usable answer>"}. Keep her meaning; '
+            "do not embellish."
+        )
+
+    try:
+        raw = llm_json(prompt)
+        value = (raw or {}).get("value")
+        value = value.strip() if isinstance(value, str) else None
+        if options and value not in options:
+            value = None  # a hallucinated option is worse than asking again
+        if value:
+            return {"value": value, "provider": "gemini"}
+    except Exception:  # noqa: BLE001 - fall through to her own words
+        pass
+
+    # Model unavailable or unhelpful. For free text her words are still the
+    # best answer we have; for an enum we cannot honestly pick, so we don't.
+    if not options:
+        return {"value": said[:80], "provider": "verbatim"}
+    return {"value": None, "provider": "none"}
 
 
 # ------------------------------------------------------------- attribute spec
 def _attr_fields_for(category):
-    """common attributes + the category's own, in display order."""
+    """common attributes + the category's own, in display order.
+
+    No category → no fields. The common ones alone would be a half-filled
+    attribute set built on a category we don't know yet; the graph rebuilds
+    these via attributes_for() once she's told us which it is.
+    """
+    if not category:
+        return []
     spec = _load_attr_spec()
     return spec.get("common", []) + spec.get("categories", {}).get(category, {}).get("attributes", [])
 
@@ -70,13 +216,38 @@ def _is_fixed(f):
 _MODEL_SKIP = {"net_quantity"}
 
 
+def _seller_only(f):
+    """Marked infer:"seller" — only she can know this; a guess is a fabrication.
+
+    The spec has always said which fields are hers: age_group, size, purity,
+    certification, shelf_life, gross_weight, dimensions. Nothing enforced it, so
+    the model filled them anyway — a seller who said only "teddy bear, 4 pieces,
+    ₹200, small size" had "Age Group: 0-1.5 Years" invented for her, and that
+    invented value then drove the printed safety label on a choking-hazard toy.
+    The same hole would claim "BIS Hallmark" certification she may not hold, or
+    a shelf life for food nobody measured.
+
+    These now go unanswered to `missing_attributes`, where she is asked — one
+    tap, in her own language, rather than a plausible-looking guess.
+    """
+    return f.get("infer") == "seller"
+
+
+def _model_may_fill(f):
+    """The model reads the photo and hears her words; it does not invent facts."""
+    return not _is_fixed(f) and not _seller_only(f) and f["key"] not in _MODEL_SKIP
+
+
 def _compact_attr_spec():
-    """Per-category askable fields (with enum options) to inject into the prompt."""
+    """Per-category fields the MODEL may fill, with enum options, for the prompt.
+
+    Seller-only fields are withheld entirely — showing them invites a guess.
+    """
     spec = _load_attr_spec()
-    common = [f for f in spec.get("common", []) if not _is_fixed(f) and f["key"] not in _MODEL_SKIP]
+    common = [f for f in spec.get("common", []) if _model_may_fill(f)]
     lines = []
     for cat, body in spec.get("categories", {}).items():
-        fields = [f for f in common + body.get("attributes", []) if f["key"] not in _MODEL_SKIP]
+        fields = [f for f in common + body.get("attributes", []) if _model_may_fill(f)]
         parts = []
         for f in fields:
             opts = f.get("options")
@@ -133,6 +304,10 @@ def _finalize_attributes(category, raw, material):
             attributes[key] = f.get("value")
         elif key in _MODEL_SKIP:
             attributes[key] = det.get(key)  # derived, never the model's guess
+        elif _seller_only(f):
+            # Hers to state. Left empty on purpose so it reaches her as a
+            # question instead of arriving as a confident fabrication.
+            attributes[key] = None
         else:
             v = raw.get(key)
             attributes[key] = v if v not in (None, "", []) else det.get(key)
@@ -276,8 +451,16 @@ Seller's words:
 {photo_instruction}
 
 STEP 1 — Pick the single best category from this list, matching the seller's words
-against the aliases (fuzzy match is fine; if unsure, choose the closest):
+against the aliases:
 {_category_hints()}
+
+Do NOT choose the closest one when you are unsure. Set "category" to null instead, and
+say so in "category_confidence". This category decides which Indian law applies to her
+— the labels she must print and whether she is asked for an FSSAI, BIS or AYUSH licence.
+Guessing does not help her: if you guess wrong she is told she is compliant when she is
+not. If you return null she is simply shown the list and picks it herself, which costs
+her one tap. Use "high" only when her words or the photo clearly indicate the category;
+otherwise "low".
 
 STEP 2 — Fill the structured attributes for THE CATEGORY YOU PICKED, using only that
 category's fields below. For a field marked [opt1|opt2|...], choose exactly one listed
@@ -300,7 +483,8 @@ Return STRICT JSON only, exactly these keys:
   "quantity": <integer number of pieces, or null if not stated>,
   "cost_price_inr": <integer rupee amount the seller stated, or null>,
   "material": "<main material, or null>",
-  "category": "<one of the category keys above>",
+  "category": "<one of the category keys above, or null if not clearly indicated>",
+  "category_confidence": "<high | low>",
   "photo_ok": <true or false>,
   "photo_issue": <short string or null>,
   "photo_authenticity": "<original | watermarked | stock_or_catalogue | likely_ai | unsure>",
@@ -318,7 +502,9 @@ Return STRICT JSON only, exactly these keys:
         result["fallback_reason"] = str(exc)
         return result
 
-    category = raw.get("category") or _pick_category(voice_text)
+    category = resolve_category(
+        raw.get("category"), voice_text, raw.get("category_confidence")
+    )
     quantity = raw.get("quantity")
     material = raw.get("material")
     product_name = raw.get("product_name") or "handmade product"

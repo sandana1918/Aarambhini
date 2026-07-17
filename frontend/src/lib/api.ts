@@ -108,7 +108,7 @@ export type ApprovalEdits = {
 
 export async function clarifyListing(
   id: string,
-  answers: { cost_price_inr?: number },
+  answers: { cost_price_inr?: number; category?: string },
 ): Promise<RunResult> {
   const res = await fetch(`${API_BASE}/listings/${id}/clarify`, {
     method: 'POST',
@@ -172,6 +172,71 @@ export async function approveListing(
     body: JSON.stringify({ approved, notes: notes ?? null, edits: edits ?? null }),
   });
   return json(res);
+}
+
+export type PendingField = {
+  key: string;
+  label: string;
+  type: string;
+  options: string[];
+  required: boolean;
+};
+
+/** The details still missing, with the key + options needed to answer them. */
+export async function getPendingAttributes(
+  id: string,
+): Promise<{ category: string | null; fields: PendingField[] }> {
+  const res = await fetch(`${API_BASE}/listings/${id}/pending-attributes`, {
+    headers: authHeaders(),
+  });
+  return json(res);
+}
+
+/** Her spoken answer -> a value this field accepts. Throws if it can't match. */
+export async function resolveAttribute(
+  id: string,
+  key: string,
+  spokenText: string,
+): Promise<{ key: string; value: string; provider: string }> {
+  const res = await fetch(`${API_BASE}/listings/${id}/attribute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ key, spoken_text: spokenText }),
+  });
+  return json(res);
+}
+
+export type Translation = { original: string; text: string; provider: string };
+
+/** English -> her language, for reading only. Defaults to her registered language. */
+export async function translateTexts(
+  texts: string[],
+  to?: string,
+): Promise<{ language: string; translations: Translation[] }> {
+  const res = await fetch(`${API_BASE}/language/translate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ texts, to: to ?? null }),
+  });
+  return json(res);
+}
+
+/**
+ * Her language -> a playable audio URL, or null when speech isn't available.
+ * Null is normal (404) — the caller hides the button rather than showing a
+ * broken one. Caller owns revokeObjectURL.
+ */
+export async function speakUrl(text: string, lang?: string): Promise<string | null> {
+  const res = await fetch(`${API_BASE}/language/speak`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ text, lang: lang ?? null }),
+  });
+  if (!res.ok) {
+    if (res.status === 401) clearSession();
+    return null;
+  }
+  return URL.createObjectURL(await res.blob());
 }
 
 export async function getHealth(): Promise<{ status: string; db: string }> {
