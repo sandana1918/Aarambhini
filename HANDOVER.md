@@ -171,9 +171,19 @@ SESSION_TTL_HOURS=12
 DEMO_SELLER_PASSWORD=          # password given to seeded sellers (default: aarambhini-demo)
 ```
 
-> **Demo logins:** every seeded seller's password is `aarambhini-demo`. `9990000002` is Lakshmi
-> Ammal, `9990000003` is Ratna Barik; the full roster is in `backend/seed_demo.py`. Both seed
-> scripts set this password **only where one is missing**, so a re-seed never clobbers a real one.
+> **Demo logins:** the seed scripts set every seeded seller's password to `DEMO_SELLER_PASSWORD`
+> (default `aarambhini-demo`) **only where one is missing**, so a re-seed never clobbers a real
+> password. `9990000002` is Lakshmi Ammal, `9990000003` is Ratna Barik; the full roster is in
+> `backend/seed_demo.py`.
+>
+> ⚠️ **The default `aarambhini-demo` is published in this public repo.** Fine for a fresh local
+> `.env` you control. **Once a deployment is public** (Render/Vercel), that default must be
+> rotated to something private — anyone can read it here and sign in as any demo seller on your
+> live URL otherwise. This was caught live: the 7 demo sellers were reachable on the deployed
+> app with this exact password. Fix: overwrite `password_hash` directly for those accounts (not
+> via re-seeding, which reads `DEMO_SELLER_PASSWORD` and would just reapply the same public
+> default) and keep the new password out of any committed file — chat/a password manager, never
+> HANDOVER.md or .env.example.
 
 ```bash
 pip install -r requirements.txt          # agents/orchestrator/graph_store
@@ -186,6 +196,19 @@ npm --prefix frontend run dev -- --port 3001     # web  →  http://localhost:30
 ```
 
 > ⚠️ **The app runs on SYSTEM Python 3.13, NOT `.venv`.** See trap #1 in §11.
+
+**Tests:**
+```bash
+pip install -r requirements-dev.txt      # pytest — deliberately NOT in the Docker image
+pytest                                    # 65 tests, ~2.5s, no network/DB/model key needed
+```
+Tier 1 (`test_daam.py`, `test_suno.py`, `test_niyam.py`, `test_graph_store.py`, `test_auth.py`,
+`test_orchestrator_pure.py`) is pure functions. Tier 2 (`test_graph_end_to_end.py`) runs the
+real LangGraph graph with every `llm_json` call forced to raise, checkpointed to an in-memory
+`MemorySaver` instead of Atlas (patched in `tests/conftest.py` — `orchestrator.py` builds its
+graph at *import time*, so this has to happen before the first `import orchestrator` anywhere
+in the suite, not inside a fixture). Proves each agent's documented fallback actually runs, not
+just that the docstring claims it does — see §8 for what it caught.
 
 **API surface:** `POST /sellers` (register → token) · `POST /sessions` (login → token) ·
 `GET /sessions/me` · `POST /listings/run` ·
@@ -205,6 +228,7 @@ npm --prefix frontend run dev -- --port 3001     # web  →  http://localhost:30
 |---|---|
 | Sarvam STT | spoken WAV → *"I make handmade jute bags. 40 pieces. Cost is ₹200 each."*, `detected_via: sarvam`. Forcing a bad Sarvam key → falls back to Gemini (text visibly changes to Gemini's phrasing) |
 | Compliance loop | 12–13 step runs showing Likho → Likho (re-run #1) → Daam (re-price #1) → Niyam (recheck #1) |
+| **Bug found by testing, fixed** | The compliance loop's own regression: `likho_node` only passed `append_disclaimer` on the specific call made *for* the compliance loop. A toy needs both a label (compliance loop) *and* usually triggers Wapsi's colour/size confirmation (returns loop) — and the later `Likho (add size guide)` call rewrote the description from scratch with no instruction to keep the label, silently dropping it while `compliance_ok` stayed `True` and Daam had already priced in the label's ₹5 overhead. She'd have paid for a label that never printed. Caught by `test_graph_end_to_end.py::test_a_required_label_survives_a_later_returns_loop_rewrite` (stubbed model), then reproduced and reverified live with real Gemini: label text present in the final description, `Likho (add size guide)` in the log, real packer info intact. Fix: `likho_node` now reads `required_label_text` fresh from `state.compliance` on every call, not only the one that first drafted it |
 | Clarify interrupt | no-price note → paused at `('clarify',)` → answered ₹300 → resumed to `ready_for_approval` at ₹432 |
 | Approval interrupt | edit price 312 → **425** → `published`, `seller_overridden: true`, audit row written; double-approve → 409 |
 | pHash | same/resized photo → Hamming **0**; inverted → **64**. Same photo, different seller → **blocked** (`needs_retake`) |
@@ -316,21 +340,30 @@ These are deliberate. Reversing one without understanding the reason will make t
   for now (the frontend reads back anonymous runs); an information-disclosure gap, not a
   publishing one.
 
-- **The printed label is still full of blanks the app could fill.** It tells her to print
-  `Mfr: <Manufacturer Name>, <Full Address>` and `BIS ISI Mark: <ISI License No.>` — while her
-  own profile already holds `packer_label: {name, address}` and `licenses: {fssai, bis}`.
-  `grep packer_label` across the code returns **nothing**: never read. Legal Metrology *requires*
-  the packer's name and address, so the label as printed is **not compliant** — the product's
-  central promise, handed back to her as a form to fill in by hand. Niyam is also never told
-  she has no BIS, so it can't say so. Third instance of the same pattern
-  (`preferred_language`, now `packer_label` + `licenses`): collected, seeded, never used.
-- **The crew asks questions she cannot answer.** "Confirm the exact height in centimetres"
-  renders as a bullet at the approval gate with no input. `dimensions` *is* an askable field but
-  `required: false`, so it never enters `missing_attributes` and the voice-answer chips skip it.
-- **Only title + description are translated.** Everything she must *act on* stays English: the
-  approval bullets, the checklist, **the label text itself**, the compliance/returns cards,
-  "high risk / size mismatch". She reads Tamil, then hits an English wall where it matters.
-- **Raw enum keys leak to her** — the UI shows `Licence needed: BIS_ISI_certification`.
+- ~~**The printed label is still full of blanks.**~~ **Fixed.** `graph_store.get_packer_label(seller_id)`
+  reads her real `packer_label` and `niyam.run()` now takes `packer_label=` and substitutes it into
+  whichever field the category calls the manufacturer/packer/FBO name-and-address
+  (`_NAME_ADDRESS_FIELD` matches by shape, not an exhaustive list — new categories get it free).
+  Applied on **both** paths: the LLM prompt is told to use her exact value, and a regex
+  backstop replaces any `<...name...address...>` placeholder the model prints anyway; the
+  fully-deterministic fallback (model outage) substitutes it too. Verified live (real Gemini):
+  label reads `Mfr: Lakshmi Ammal, 12 Bharathi Street, Madurai, TN 625001` instead of
+  `<Manufacturer Name>, <Full Address>`.
+- ~~**The crew asks questions she cannot answer.**~~ **Fixed.** `FillMissingDetails` no longer
+  re-filters the backend's `pending-attributes` list down to required-only fields — it trusts
+  what the backend already decided is answerable (required-missing OR any unset field), so
+  `dimensions` (asked about by Wapsi's free-text confirmation) is now a tappable chip too.
+  Required and optional fields are styled differently (warning vs. neutral) so an optional
+  question doesn't read as blocking.
+- ~~**Only title + description are translated.**~~ **Mostly fixed.** The checklist
+  (`action_checklist`) and every approval bullet (including the safety conflict warning and
+  Wapsi's confirmation question) are now bilingual via a shared `useTranslatedList` hook — same
+  spoken-language-wins rule as the title/description panel. Verified live: the printed-label
+  checklist item shows Tamil **with the packer-label fix already baked in**
+  (`Mfr: லட்சுமி அம்மால், 12 பாரதி தெரு, மதுரை`). Still English: button labels, section
+  headings, the compliance/returns/packaging tab contents.
+- ~~**Raw enum keys leak to her.**~~ **Fixed.** `licenceLabel()` renders `BIS_ISI_certification`
+  as `BIS ISI certification`.
 
 ### 🟡 Input / photo cases
 - Price **in words** ("do sau rupaye") — `_extract_rupees` is digits-only → falls to clarify (graceful).
@@ -346,7 +379,11 @@ These are deliberate. Reversing one without understanding the reason will make t
 - pHash is an **O(n) linear scan** — fine at prototype scale; needs bucketing/LSH later.
 
 ### ⬜ Not built
-- **Zero tests** (verified — every `test_*.py` is inside `.venv`).
+- ~~**Zero tests.**~~ **Fixed.** 65 tests, `tests/`, 2.5s, fully hermetic (no network, no DB,
+  no model key — see §7 for how to run them). Tier 1 (pure functions) + Tier 2 (the real graph,
+  every model call forced to fail, proving each agent's documented fallback actually works and
+  the loops actually iterate — not just that they're wired into the graph). Writing the Tier 2
+  suite caught a real, live bug — see the compliance-loop row in §8.
 - Reverse-image search (stock photos never seen before still pass).
 - Public browse page — the 10 seeded listings are invisible in the app.
 - **Real marketplace publishing** — `published` is an internal status only.
@@ -447,12 +484,17 @@ These are deliberate. Reversing one without understanding the reason will make t
 
 ## 14. Suggested next steps (in order)
 
-1. **Fix the 3 red items** — ~~auth/ownership on `/approve`~~ **(done — see §8)**. Still open:
+1. **Fix the 3 red items** — ~~auth/ownership on `/approve`~~ **(done — see §8)**. ~~a
+   category-confidence check so food can't silently skip FSSAI~~ **(done — §10, category never
+   defaults silently, unknown category is a blocking clarify question)**. Still open:
    licence-blocking (decided: explicit seller acknowledgement at the approval interrupt,
-   recorded in the audit log — *not built yet*), and a category-confidence check so food can't
-   silently skip FSSAI. **The category one is the highest-risk thing left in the project.**
-2. **Tests, Tier 1 + 2** — pure functions (Daam maths, `_extract_rupees`, pHash/Hamming,
-   Wapsi learning, `_blocking_gaps`), then **the graph with a stubbed `llm_json`** to assert the
-   loops actually fire. That tests the real differentiator.
-3. **Deploy** — Vercel + a long-running backend; verify SSE isn't buffered.
-4. Then: HEIC/EXIF handling, a "buyer's-eye preview" (not a storefront), reverse-image search.
+   recorded in the audit log — *not built yet*).
+2. ~~**Tests, Tier 1 + 2**~~ **Done.** 65 tests, §7 has how to run them. Tier 2 caught a real
+   live bug on its first real write — see §8.
+3. ~~**Deploy**~~ **Done.** Vercel (frontend) + Render (API, Docker, long-running) + Atlas —
+   live. SSE behaviour on Render specifically has not been re-verified since the redeploys in
+   this session; worth a direct check before relying on the live agent timeline in a demo.
+4. Then, in roughly this order: the packer_label / manufacturer-address gap
+   (**done — §10**), bilingual checklist + approval bullets (**done — §10**), the unanswerable
+   height question (**done — §10**), licence-blocking, HEIC/EXIF handling, a "buyer's-eye
+   preview" (not a storefront), reverse-image search.

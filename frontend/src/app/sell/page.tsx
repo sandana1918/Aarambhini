@@ -6,13 +6,14 @@ import { useRouter } from 'next/navigation';
 import { Header } from '@/components/Chrome';
 import { AgentTimeline } from '@/components/AgentTimeline';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
-import { ProductDetails } from '@/components/ProductDetails';
+import { ProductDetails, labelFor } from '@/components/ProductDetails';
 import { ReviewInHerLanguage } from '@/components/ReviewInHerLanguage';
 import { FillMissingDetails } from '@/components/FillMissingDetails';
 import { Stepper, type StepId } from '@/components/Stepper';
 import { Tabs, type Tab } from '@/components/Tabs';
 import { Icon } from '@/components/icons';
 import { runListingStream, approveListing, clarifyListing, fetchMe } from '@/lib/api';
+import { useTranslatedList } from '@/lib/useTranslatedList';
 import { clearSession, loadSession, type Session } from '@/lib/session';
 import type { RunResult } from '@/lib/types';
 
@@ -34,16 +35,24 @@ function detailTabs(
   result: RunResult,
   risk: string,
   riskStyle: { dot: string; text: string; bg: string },
+  attributeEdits: Record<string, string>,
 ): Tab[] {
-  const missingCount = result.missing_attributes?.length ?? 0;
+  // What will actually publish: the crew's draft with her spoken answers laid
+  // on top. Without this merge, the Product Details tab kept showing the
+  // ORIGINAL crew output even after she answered "Age Group" by voice — she'd
+  // see a green checkmark in the answer widget and a contradicting "missing"
+  // pill one tab over, with nothing on screen matching what /approve would
+  // actually publish.
+  const mergedAttributes = { ...(result.product_attributes ?? {}), ...attributeEdits };
+  const answeredLabels = new Set(Object.keys(attributeEdits).map(labelFor));
+  const stillMissing = (result.missing_attributes ?? []).filter((l) => !answeredLabels.has(l));
+  const missingCount = stillMissing.length;
   return [
     {
       id: 'details',
       label: 'Product details',
       badge: missingCount ? String(missingCount) : null,
-      content: (
-        <ProductDetails attributes={result.product_attributes} missing={result.missing_attributes} />
-      ),
+      content: <ProductDetails attributes={mergedAttributes} missing={stillMissing} />,
     },
     {
       id: 'compliance',
@@ -330,6 +339,16 @@ export default function SellPage() {
   const categoryQuestion = questions.find((q) => q.field === 'category');
   const risk = result?.returns?.risk_level ?? 'low';
   const riskStyle = RISK[risk] ?? RISK.low;
+  const detectedLanguage = result?.suno?.detected_language;
+
+  // The checklist and the approval bullets are the other things she must act
+  // on — the title/description review went bilingual, these hadn't. Same
+  // language rule: what she just spoke, not what she registered with.
+  const checklistI18n = useTranslatedList(result?.action_checklist ?? [], detectedLanguage);
+  const approvalsI18n = useTranslatedList(
+    (result?.approvals ?? []).map((a) => a.summary),
+    detectedLanguage,
+  );
 
   // The step follows the run, so it can never disagree with what's on screen:
   // no result → tell us; crew running → the crew; anything back → review.
@@ -713,21 +732,40 @@ export default function SellPage() {
                     warning, the missing details, the checklist and the gate —
                     stays on the page below; an unopened tab reads as "no
                     problem here", so nothing safety-bearing lives in here. */}
-                <Tabs tabs={detailTabs(result, risk, riskStyle)} />
+                {/* No key forcing a remount here on purpose — Tabs keeps its
+                    own "which tab is active" state, and detailTabs() already
+                    recomputes fresh content on every render. Forcing a
+                    remount would kick her back to the first tab the moment
+                    she answers a question, which is the opposite of helpful
+                    mid-review. */}
+                <Tabs tabs={detailTabs(result, risk, riskStyle, attributeEdits)} />
 
                 {/* Checklist */}
                 {!!result.action_checklist?.length && (
                   <section className="card p-5">
                     <p className="text-[13px] font-bold text-ink">Your next steps</p>
                     <ul className="mt-3 space-y-2">
-                      {result.action_checklist.map((item, i) => (
-                        <li key={i} className="flex gap-2.5 text-[13px] leading-relaxed text-ink-2">
-                          <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded border border-line text-[9px] text-muted">
-                            {i + 1}
-                          </span>
-                          {item}
-                        </li>
-                      ))}
+                      {result.action_checklist.map((item, i) => {
+                        const her = checklistI18n.get(item);
+                        return (
+                          <li key={i} className="flex gap-2.5 text-[13px] leading-relaxed text-ink-2">
+                            <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded border border-line text-[9px] text-muted">
+                              {i + 1}
+                            </span>
+                            {/* Her language first when we have it; the English
+                                stays visible underneath — she still needs it to
+                                match against the printed label and the listing. */}
+                            {her ? (
+                              <span>
+                                <span className="block">{her}</span>
+                                <span className="mt-0.5 block text-[11px] text-muted">{item}</span>
+                              </span>
+                            ) : (
+                              item
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </section>
                 )}
@@ -786,8 +824,9 @@ export default function SellPage() {
                         publish, or reject.
                       </p>
                       <ul className="mt-4 space-y-2">
-                        {result.approvals?.map((a, i) =>
-                          a.type === 'conflict' ? (
+                        {result.approvals?.map((a, i) => {
+                          const her = approvalsI18n.get(a.summary);
+                          return a.type === 'conflict' ? (
                             // The label disagrees with the listing. On a toy that's
                             // a child-safety statement, so it can't look like the
                             // routine "Publish this listing?" bullet next to it.
@@ -798,7 +837,16 @@ export default function SellPage() {
                               <Icon name="alert" size={15} className="mt-0.5 shrink-0" />
                               <span>
                                 <strong className="font-bold">Please check this before printing.</strong>{' '}
-                                {a.summary}
+                                {her ? (
+                                  <>
+                                    <span className="block">{her}</span>
+                                    <span className="mt-0.5 block text-[11.5px] font-normal text-danger/80">
+                                      {a.summary}
+                                    </span>
+                                  </>
+                                ) : (
+                                  a.summary
+                                )}
                               </span>
                             </li>
                           ) : (
@@ -807,10 +855,17 @@ export default function SellPage() {
                               className="flex items-start gap-2.5 rounded-xl bg-canvas px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-2"
                             >
                               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
-                              {a.summary}
+                              {her ? (
+                                <span>
+                                  <span className="block">{her}</span>
+                                  <span className="mt-0.5 block text-[11px] text-muted">{a.summary}</span>
+                                </span>
+                              ) : (
+                                a.summary
+                              )}
                             </li>
-                          ),
-                        )}
+                          );
+                        })}
                       </ul>
 
                       {/* She reads it in her own language before she's asked to

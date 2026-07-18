@@ -236,7 +236,17 @@ def clarify_node(state) -> dict:
 
 
 def likho_node(state) -> dict:
-    append_disclaimer = None
+    # A required label, once drafted, must survive EVERY later Likho call, not
+    # only the specific call made for the compliance loop. Each of Likho's
+    # loop instructions rewrites the description from scratch, so a required
+    # label was silently disappearing whenever the returns loop asked for a
+    # size guide afterward: Daam had already priced in the label overhead,
+    # Niyam had already reported compliance_ok=True, and the description
+    # that actually published carried no label at all. Reading it fresh from
+    # state.compliance (not from the loop-specific branch below) is what
+    # keeps it attached regardless of which loop triggers this call.
+    compliance = state.get("compliance") or {}
+    append_disclaimer = compliance.get("required_label_text") or None
     revision_note = None
     size_guide = None
 
@@ -244,7 +254,6 @@ def likho_node(state) -> dict:
         size_guide = state.get("size_guide_text")
         label = "Likho (add size guide)"
     elif _in_compliance_loop(state):
-        append_disclaimer = state["compliance"].get("required_label_text")
         label = f"Likho (re-run #{state.get('tries', 0) + 1})"
     elif _in_quality_loop(state):
         revision_note = state["review"].get("revision_note")
@@ -312,12 +321,16 @@ def niyam_node(state) -> dict:
     # The listing's own facts. Without these Niyam drafts the label blind and
     # invents values that contradict the listing it is labelling.
     attrs = state.get("product_attributes") or {}
+    # Her name + address for the printed label's manufacturer/packer field.
+    # None on an anonymous run (no seller_id) — Niyam falls back to a
+    # placeholder there, same as before this existed.
+    packer_label = graph_store.get_packer_label(state.get("seller_id"))
     if _in_compliance_loop(state):
         tries = state.get("tries", 0) + 1
         ny = niyam_agent.run(
             s.get("category"), s.get("product_name"), s.get("quantity"),
             label_applied=True, label_text=state["compliance"].get("required_label_text"),
-            product_attributes=attrs,
+            product_attributes=attrs, packer_label=packer_label,
         )
         # The recheck echoes the existing label instead of redrafting, so it never
         # re-derives conflicts — carry forward what the first pass found rather
@@ -327,7 +340,7 @@ def niyam_node(state) -> dict:
         return {"compliance": ny, "tries": tries, "log": [(f"Niyam (recheck #{tries})", ny)]}
     ny = niyam_agent.run(
         s.get("category"), s.get("product_name"), s.get("quantity"),
-        product_attributes=attrs,
+        product_attributes=attrs, packer_label=packer_label,
     )
     return {"compliance": ny, "log": [("Niyam", ny)]}
 

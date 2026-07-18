@@ -48,6 +48,21 @@ def _known_values(product_attributes):
     return "\n".join(lines)
 
 
+# Every category spells the packer field differently — manufacturer_name_and_
+# address, fbo_name_and_address, packer_name_and_address — but they all mean
+# the same thing: who made this and where. Matched by shape, not an exhaustive
+# list, so a category added later still gets her real details instead of a
+# blank the moment it asks for a name-and-address field.
+_NAME_ADDRESS_FIELD = re.compile(r"name.*address|address.*name", re.I)
+
+
+def _packer_line(packer_label):
+    """Her name + address, ready to drop into a label line, or None."""
+    if not packer_label or not packer_label.get("name") or not packer_label.get("address"):
+        return None
+    return f"{packer_label['name']}, {packer_label['address']}"
+
+
 def _match_field(reported, product_attributes):
     """Map a model-named field onto a real attribute key, or None.
 
@@ -96,7 +111,7 @@ def _age_conflict(product_attributes, label_text):
 
 
 def run(category, product_name, quantity, label_applied=False, label_text=None,
-        product_attributes=None):
+        product_attributes=None, packer_label=None):
     """-> dict. label_applied flips compliance_ok true once labels are on the listing.
 
     On a recheck, pass the already-drafted label_text so Niyam echoes the exact
@@ -105,12 +120,23 @@ def run(category, product_name, quantity, label_applied=False, label_text=None,
 
     `product_attributes` are the listing's own facts. Without them Niyam drafts
     the label blind and makes up values that contradict the listing.
+
+    `packer_label` is {name, address} from the seller's own profile. Every
+    category requires a name-and-address field on the label (manufacturer,
+    packer, FBO — the wording varies, the requirement doesn't), and without this
+    Niyam had nothing to put there but "<Manufacturer Name>, <Full Address>" — a
+    blank on the one document Legal Metrology actually inspects. The data has
+    sat in her profile since registration.
     """
     rules = _load_rules()
     cat = rules["categories"].get(category, {})
     required_labels = cat.get("required_labels", [])
     required_licenses = cat.get("required_licenses", [])
     label_overhead = 5 if required_labels else 0
+    packer_line = _packer_line(packer_label)
+    name_address_field = next(
+        (f for f in required_labels if _NAME_ADDRESS_FIELD.search(f)), None
+    )
 
     # Draft the actual on-pack label text via the LLM (product-specific), grounded
     # in the required_labels the rules base demands. On recheck, reuse the exact
@@ -121,6 +147,11 @@ def run(category, product_name, quantity, label_applied=False, label_text=None,
         required_label_text = label_text
     elif required_labels:
         known = _known_values(product_attributes)
+        packer_note = (
+            f'\n\nThe seller\'s real name and address, for the {name_address_field} '
+            f'field — use exactly this, not a placeholder: "{packer_line}"'
+            if name_address_field and packer_line else ""
+        )
         prompt = f"""You are Niyam, a compliance officer. Draft the exact printed label text
 for this product so it satisfies Indian Legal Metrology / category rules.
 
@@ -131,7 +162,7 @@ Required label fields (must all appear): {', '.join(required_labels)}
 These are the listing's own confirmed values. Where a label field corresponds to
 one of these, use THIS EXACT VALUE — the label and the listing describe the same
 product, and a label that contradicts the listing is worse than no label:
-{known or "(none confirmed yet)"}
+{known or "(none confirmed yet)"}{packer_note}
 
 If the law requires a value that differs from the listing above (for example a
 stricter age grading for a choking hazard), do NOT quietly print the different
@@ -146,6 +177,14 @@ Return STRICT JSON only:
         try:
             raw = llm_json(prompt)
             required_label_text = raw.get("required_label_text", "")
+            # A model can still ignore the instruction and print the placeholder
+            # anyway — this is not optional the way a style note is, so replace
+            # it deterministically rather than hope the wording landed.
+            if name_address_field and packer_line:
+                required_label_text = re.sub(
+                    r"<[^<>]*(?:name|address)[^<>]*>", packer_line,
+                    required_label_text, count=1, flags=re.I,
+                )
             for c in raw.get("conflicts") or []:
                 if not isinstance(c, dict) or not c.get("field"):
                     continue
@@ -167,7 +206,12 @@ Return STRICT JSON only:
                 })
         except Exception:
             # Deterministic fallback so the loop never stalls without the LLM.
-            required_label_text = "; ".join(f"<{f}>" for f in required_labels)
+            # Still use her real details where we have them — a model outage is
+            # not a reason to print a blank for a fact we already know.
+            required_label_text = "; ".join(
+                packer_line if f == name_address_field and packer_line else f"<{f}>"
+                for f in required_labels
+            )
 
     actions = []
     if required_labels:

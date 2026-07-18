@@ -45,7 +45,7 @@ const LABELS: Record<string, string> = {
   ruling: 'Ruling',
 };
 
-function labelFor(key: string) {
+export function labelFor(key: string) {
   return LABELS[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
