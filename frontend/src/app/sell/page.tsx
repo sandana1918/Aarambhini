@@ -168,6 +168,7 @@ export default function SellPage() {
   // Pushing an approved listing to her real storefront (Shopify) — a separate,
   // post-approval step, only offered when a store is actually connected.
   const [storeConfigured, setStoreConfigured] = useState(false);
+  const [storePassword, setStorePassword] = useState<string | null>(null);
   const [storeResult, setStoreResult] = useState<StorePublishResult | null>(null);
   const [storeBusy, setStoreBusy] = useState(false);
   const [storeError, setStoreError] = useState<string | null>(null);
@@ -211,8 +212,11 @@ export default function SellPage() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const { configured } = await getStoreStatus();
-      if (active) setStoreConfigured(configured);
+      const { configured, storefront_password } = await getStoreStatus();
+      if (active) {
+        setStoreConfigured(configured);
+        setStorePassword(storefront_password ?? null);
+      }
     })();
     return () => {
       active = false;
@@ -861,10 +865,20 @@ export default function SellPage() {
                           >
                             {storeResult.storefront_url ?? storeResult.admin_url}
                           </a>
-                          <p className="mt-1.5 text-[10.5px] leading-relaxed text-muted">
-                            If the public page asks for a store password, remove it in your store&apos;s
-                            Online Store → Preferences.
-                          </p>
+                          {storePassword ? (
+                            <p className="mt-1.5 text-[10.5px] leading-relaxed text-muted">
+                              If the page asks for a store password, enter{' '}
+                              <span className="font-mono font-semibold text-ink-2">
+                                {storePassword}
+                              </span>
+                              .
+                            </p>
+                          ) : (
+                            <p className="mt-1.5 text-[10.5px] leading-relaxed text-muted">
+                              If your store is still private, viewers will need your store password to
+                              open this page.
+                            </p>
+                          )}
                         </div>
                       )}
 

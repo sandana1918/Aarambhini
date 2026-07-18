@@ -478,7 +478,12 @@ async def store_status():
     """
     import shopify_store
 
-    return {"configured": shopify_store.is_configured()}
+    return {
+        "configured": shopify_store.is_configured(),
+        # Shown to a self-serve demo viewer so they can open a dev-store page
+        # that Shopify keeps password-gated. None outside a demo.
+        "storefront_password": shopify_store.storefront_password(),
+    }
 
 
 @router.post("/{listing_id}/publish-to-store")

@@ -37,6 +37,16 @@ def is_configured() -> bool:
     return bool(domain and token)
 
 
+def storefront_password():
+    """The dev-store's public password, if set, so the UI can show it to a
+    self-serve demo viewer. A dev store can't be made fully public (Shopify
+    requires a plan), so for a demo this is the honest way to let a judge in.
+    Env-driven, not hardcoded, so it never lands in the committed repo — it's a
+    throwaway view-only password, but there's no reason to bake it into git.
+    """
+    return os.getenv("SHOPIFY_STOREFRONT_PASSWORD") or None
+
+
 def _to_html(text: str) -> str:
     """The description carries the compliance label appended as plain text.
     Keep it readable; Shopify's body_html accepts basic HTML.

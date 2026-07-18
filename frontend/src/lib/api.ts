@@ -107,8 +107,12 @@ export type ApprovalEdits = {
   attributes?: Record<string, string>;
 };
 
-/** Is an external store (Shopify) connected? The button only shows if so. */
-export async function getStoreStatus(): Promise<{ configured: boolean }> {
+/** Is an external store (Shopify) connected? The button only shows if so.
+ * `storefront_password` is present only for a password-gated demo dev store. */
+export async function getStoreStatus(): Promise<{
+  configured: boolean;
+  storefront_password?: string | null;
+}> {
   try {
     const res = await fetch(`${API_BASE}/listings/store/status`);
     return await json(res);
