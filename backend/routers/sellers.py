@@ -36,6 +36,18 @@ async def register_seller(payload: SellerRegister):
     doc["password_hash"] = await asyncio.to_thread(hash_password, payload.password)
     doc["created_at"] = datetime.now(timezone.utc)
 
+    # Build the packer label from her name + address. This is what Niyam prints
+    # on every compliance label (Legal Metrology requires the packer's name and
+    # address) — without it the label reads "<Insert Name and Address>". Derived
+    # here rather than asked separately, since it's just her own details.
+    addr = doc.get("address") or {}
+    addr_str = ", ".join(
+        part for part in (addr.get("line"), addr.get("district"),
+                          addr.get("state"), addr.get("pincode")) if part
+    )
+    if addr_str:
+        doc["packer_label"] = {"name": doc["name"], "address": addr_str}
+
     try:
         res = await db[SELLERS].insert_one(doc)
     except DuplicateKeyError:

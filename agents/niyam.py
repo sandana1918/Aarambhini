@@ -63,6 +63,47 @@ def _packer_line(packer_label):
     return f"{packer_label['name']}, {packer_label['address']}"
 
 
+def _fill_known_placeholders(text, packer_line, mrp):
+    """Replace the placeholders we can fill from data we already hold.
+
+    A model told "use this exact value" still sometimes prints `<placeholder>`
+    anyway, so this runs deterministically after the draft rather than trusting
+    the wording landed. The three we can always fill: her name+address (from her
+    profile), the MRP (which just *is* the selling price — the label field is the
+    only place it's ever asked for), and the manufacture month (a rural seller
+    doesn't track per-batch dates; the honest default is the month she listed it).
+    """
+    import datetime
+
+    if packer_line:
+        text = re.sub(r"<[^<>]*(?:name|address)[^<>]*>", packer_line, text, flags=re.I)
+    if mrp:
+        text = re.sub(r"₹?\s*<[^<>]*(?:mrp|m\.?r\.?p|price)[^<>]*>", f"₹{mrp}", text, flags=re.I)
+    mfg = datetime.datetime.now().strftime("%m/%Y")
+    # The negative lookahead keeps this off "manufacturer_name_and_address" —
+    # "manufactur" is a substring of "manufacturer", but that field is a NAME,
+    # not a date. Match a date placeholder only when it carries no name/address.
+    text = re.sub(
+        r"<(?![^<>]*(?:name|address))[^<>]*(?:mfg|manufactur|month|date)[^<>]*>",
+        mfg, text, flags=re.I,
+    )
+    return text
+
+
+def _strip_unfilled_clauses(text):
+    """Drop any clause still carrying a placeholder we couldn't fill.
+
+    An optional field the model invented (dimensions on a bag) or a field the
+    seller genuinely hasn't given must NOT reach the buyer-facing description as
+    raw "<Insert X>" text — that reads as a broken listing. Better to omit the
+    clause than to show a blank. Splits on the field separators a label uses and
+    keeps only the clauses that are actually filled.
+    """
+    parts = re.split(r"\s*[;,|]\s*", text)
+    kept = [p.strip() for p in parts if p.strip() and not re.search(r"<[^<>]+>", p)]
+    return ", ".join(kept)
+
+
 def _match_field(reported, product_attributes):
     """Map a model-named field onto a real attribute key, or None.
 
@@ -111,7 +152,7 @@ def _age_conflict(product_attributes, label_text):
 
 
 def run(category, product_name, quantity, label_applied=False, label_text=None,
-        product_attributes=None, packer_label=None):
+        product_attributes=None, packer_label=None, mrp=None):
     """-> dict. label_applied flips compliance_ok true once labels are on the listing.
 
     On a recheck, pass the already-drafted label_text so Niyam echoes the exact
@@ -177,14 +218,14 @@ Return STRICT JSON only:
         try:
             raw = llm_json(prompt)
             required_label_text = raw.get("required_label_text", "")
-            # A model can still ignore the instruction and print the placeholder
-            # anyway — this is not optional the way a style note is, so replace
-            # it deterministically rather than hope the wording landed.
-            if name_address_field and packer_line:
-                required_label_text = re.sub(
-                    r"<[^<>]*(?:name|address)[^<>]*>", packer_line,
-                    required_label_text, count=1, flags=re.I,
-                )
+            # Fill what we hold (name/address, MRP, mfg month) deterministically —
+            # the model often prints the placeholder anyway — then drop any clause
+            # still carrying an unfillable placeholder so no "<Insert X>" reaches
+            # the buyer-facing description.
+            required_label_text = _fill_known_placeholders(
+                required_label_text, packer_line, mrp
+            )
+            required_label_text = _strip_unfilled_clauses(required_label_text)
             for c in raw.get("conflicts") or []:
                 if not isinstance(c, dict) or not c.get("field"):
                     continue
@@ -211,6 +252,12 @@ Return STRICT JSON only:
             required_label_text = "; ".join(
                 packer_line if f == name_address_field and packer_line else f"<{f}>"
                 for f in required_labels
+            )
+            # Fill what we hold, but DON'T strip here — with no model the label is
+            # a hand-fill template, and the remaining placeholders are the fields
+            # she must complete. Stripping would leave her an empty label.
+            required_label_text = _fill_known_placeholders(
+                required_label_text, packer_line, mrp
             )
 
     actions = []

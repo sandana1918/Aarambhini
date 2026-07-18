@@ -50,6 +50,7 @@ export type RegisterInput = {
   password: string;
   preferred_language: string;
   shg_name?: string;
+  address?: { line: string; district: string; state: string; pincode: string };
 };
 
 /** Register and land signed in — no second trip through the login form. */

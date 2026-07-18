@@ -192,12 +192,27 @@ export function FillMissingDetails({
           </button>
         ))}
         {done.map((f) => (
-          <span
+          // Clickable so she can redo it — voice mis-hears ("No. of
+          // Compartments: Paint" when she said "plain"), and a green tick she
+          // can't undo is worse than no tick. Tapping re-opens the recorder.
+          <button
             key={f.key}
-            className="inline-flex items-center gap-1 rounded-full border border-ok/40 bg-ok-bg px-2.5 py-1 text-[11.5px] font-semibold text-ok"
+            type="button"
+            title="Tap to record again"
+            onClick={() => {
+              setOpen(f);
+              setError(null);
+              setPhrases({});
+            }}
+            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold transition ${
+              open?.key === f.key
+                ? 'border-brand bg-brand-50 text-brand-700'
+                : 'border-ok/40 bg-ok-bg text-ok hover:border-brand-300'
+            }`}
           >
             <Icon name="check" size={10} /> {f.label}: {filled[f.key]}
-          </span>
+            <span className="ml-0.5 opacity-60">↻</span>
+          </button>
         ))}
       </div>
 

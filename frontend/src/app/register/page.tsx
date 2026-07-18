@@ -32,6 +32,13 @@ export default function RegisterPage() {
   const [phone, setPhone] = useState('');
   const [shgName, setShgName] = useState('');
   const [language, setLanguage] = useState('hi');
+  // Address is required: it's the packer name+address the law demands on every
+  // printed label. Without it the compliance label reads "<Insert Name and
+  // Address>" — a blank on the one document the buyer and the inspector see.
+  const [addressLine, setAddressLine] = useState('');
+  const [district, setDistrict] = useState('');
+  const [stateName, setStateName] = useState('');
+  const [pincode, setPincode] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -44,6 +51,9 @@ export default function RegisterPage() {
   const canSubmit =
     name.trim().length > 0 &&
     phoneDigits.length >= 8 &&
+    addressLine.trim().length > 0 &&
+    district.trim().length > 0 &&
+    stateName.trim().length > 0 &&
     password.length >= MIN_PASSWORD &&
     password === confirm;
 
@@ -59,6 +69,12 @@ export default function RegisterPage() {
         password,
         preferred_language: language,
         shg_name: shgName.trim() || undefined,
+        address: {
+          line: addressLine.trim(),
+          district: district.trim(),
+          state: stateName.trim(),
+          pincode: pincode.trim(),
+        },
       });
       router.push('/sell'); // register returns a session — straight to work
     } catch (err) {
@@ -128,6 +144,48 @@ export default function RegisterPage() {
                 value={shgName}
                 onChange={(e) => setShgName(e.target.value)}
                 placeholder="e.g. Kaveri Mahila Sangam"
+                className={field}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="addr" className="block text-[13px] font-semibold text-ink">
+                Your address
+              </label>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted">
+                The law requires your name and address on every product label — this is
+                what goes there, so buyers and inspectors can reach you.
+              </p>
+              <input
+                id="addr"
+                type="text"
+                value={addressLine}
+                onChange={(e) => setAddressLine(e.target.value)}
+                placeholder="House / street / village"
+                className={field}
+              />
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  value={district}
+                  onChange={(e) => setDistrict(e.target.value)}
+                  placeholder="District"
+                  className={field.replace('mt-2 ', '')}
+                />
+                <input
+                  type="text"
+                  value={stateName}
+                  onChange={(e) => setStateName(e.target.value)}
+                  placeholder="State"
+                  className={field.replace('mt-2 ', '')}
+                />
+              </div>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={pincode}
+                onChange={(e) => setPincode(e.target.value)}
+                placeholder="PIN code"
                 className={field}
               />
             </div>

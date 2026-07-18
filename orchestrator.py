@@ -325,12 +325,15 @@ def niyam_node(state) -> dict:
     # None on an anonymous run (no seller_id) — Niyam falls back to a
     # placeholder there, same as before this existed.
     packer_label = graph_store.get_packer_label(state.get("seller_id"))
+    # MRP on the label is just the selling price. Daam runs before Niyam, so the
+    # price is already in state on the first pass.
+    mrp = (state.get("price") or {}).get("selling_price_inr")
     if _in_compliance_loop(state):
         tries = state.get("tries", 0) + 1
         ny = niyam_agent.run(
             s.get("category"), s.get("product_name"), s.get("quantity"),
             label_applied=True, label_text=state["compliance"].get("required_label_text"),
-            product_attributes=attrs, packer_label=packer_label,
+            product_attributes=attrs, packer_label=packer_label, mrp=mrp,
         )
         # The recheck echoes the existing label instead of redrafting, so it never
         # re-derives conflicts — carry forward what the first pass found rather
@@ -340,7 +343,7 @@ def niyam_node(state) -> dict:
         return {"compliance": ny, "tries": tries, "log": [(f"Niyam (recheck #{tries})", ny)]}
     ny = niyam_agent.run(
         s.get("category"), s.get("product_name"), s.get("quantity"),
-        product_attributes=attrs, packer_label=packer_label,
+        product_attributes=attrs, packer_label=packer_label, mrp=mrp,
     )
     return {"compliance": ny, "log": [("Niyam", ny)]}
 
