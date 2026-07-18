@@ -47,13 +47,33 @@ def storefront_password():
     return os.getenv("SHOPIFY_STOREFRONT_PASSWORD") or None
 
 
-def _to_html(text: str) -> str:
-    """The description carries the compliance label appended as plain text.
-    Keep it readable; Shopify's body_html accepts basic HTML.
+def _label_to_bullets(label: str) -> str:
+    """Turn 'A: x, B: y, ...' label text into a clean bullet list.
+
+    Splits on the field separators a label uses, but not on commas *inside* a
+    value (an address is 'name, street, city' with no 'field:' colon), so each
+    'Field: value' pair becomes one line and the address stays whole.
     """
-    if not text:
-        return ""
-    return "<p>" + text.replace("\n", "<br>") + "</p>"
+    import re
+
+    parts = re.split(r"\s*;\s*|\s*,(?=[^,]*?:)", label)
+    items = [p.strip() for p in parts if p.strip()]
+    return "".join(f"<li>{it}</li>" for it in items)
+
+
+def _body_html(marketing: str, label: str) -> str:
+    """Buyer-facing copy first, then the legal/compliance details as their own
+    section — not run on to the end of the marketing paragraph.
+    """
+    html = ""
+    if marketing:
+        html += "<p>" + marketing.replace("\n", "<br>") + "</p>"
+    if label:
+        html += (
+            '<hr><p><strong>Product &amp; compliance details</strong></p>'
+            f"<ul>{_label_to_bullets(label)}</ul>"
+        )
+    return html
 
 
 def create_product(
@@ -63,6 +83,7 @@ def create_product(
     image_bytes: bytes = None,
     image_filename: str = None,
     tags=None,
+    label: str = "",
 ) -> dict:
     """Create a product on the store. Returns {id, storefront_url, admin_url}.
 
@@ -81,7 +102,7 @@ def create_product(
 
     product = {
         "title": (title or "Handmade product").strip(),
-        "body_html": _to_html(description),
+        "body_html": _body_html(description, label),
         "vendor": "Aarambhini",
         "status": "active",
         # A price of None would make an unbuyable product; default to a variant

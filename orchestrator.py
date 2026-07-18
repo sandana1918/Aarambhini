@@ -302,12 +302,14 @@ def review_node(state) -> dict:
 
 
 def daam_node(state) -> dict:
-    overhead = 0
-    label = "Daam"
-    if _in_compliance_loop(state):
-        overhead = state["compliance"].get("label_overhead_inr", 0)
-        label = f"Daam (re-price #{state.get('tries', 0) + 1})"
     s = state["suno"]
+    # Price the label cost in from the FIRST pass, not only during the
+    # compliance loop, so the first price already equals the final one and the
+    # MRP printed on the label matches what the buyer pays. daam.run is not
+    # cumulative (base = cost + shipping + overhead), so the loop's re-price with
+    # the same overhead lands on the identical number — no double-charge.
+    overhead = niyam_agent.label_overhead_for(s.get("category"))
+    label = f"Daam (re-price #{state.get('tries', 0) + 1})" if _in_compliance_loop(state) else "Daam"
     dm = daam_agent.run(
         s.get("cost_price_inr"), s.get("category"),
         desired_margin_pct=state.get("desired_margin_pct", 20),

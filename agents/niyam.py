@@ -23,6 +23,20 @@ def _load_rules():
     return _rules
 
 
+def label_overhead_for(category) -> int:
+    """The per-unit cost of the required label (₹5 if the category needs one).
+
+    Exposed so Daam can price it in on its FIRST pass instead of only during
+    the compliance loop. When Daam absorbs it upfront, the first price already
+    equals the final price — so the MRP Niyam prints on the label matches the
+    price the buyer actually pays. Printing an MRP *below* the sale price means
+    selling above MRP, which is exactly the kind of thing this product exists to
+    prevent.
+    """
+    cat = _load_rules()["categories"].get(category, {})
+    return 5 if cat.get("required_labels") else 0
+
+
 def _gst_note(rules):
     thr = rules["gst"]["goods_threshold_inr"]
     return (

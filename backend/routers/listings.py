@@ -520,15 +520,24 @@ async def publish_to_store(listing_id: str, seller_id: str = Depends(current_sel
     price = (doc.get("price") or {}).get("selling_price_inr")
     image_bytes = await asyncio.to_thread(graph_store.load_image_bytes, doc.get("image_ref"))
 
+    # Split the buyer-facing marketing copy from the legal label. Likho appends
+    # the exact label text to the description, which reads as a run-on paragraph
+    # on a storefront. We hold the label separately in compliance, so strip it
+    # back out and send the two as distinct sections.
+    label_text = (doc.get("compliance") or {}).get("required_label_text") or ""
+    full_desc = listing.get("description") or ""
+    marketing = full_desc.replace(label_text, "").strip().rstrip(".").strip() if label_text else full_desc
+
     try:
         result = await asyncio.to_thread(
             shopify_store.create_product,
             listing.get("title"),
-            listing.get("description"),
+            marketing,
             price,
             image_bytes,
             "product.jpg",
             listing.get("keywords"),
+            label_text,
         )
     except Exception as exc:  # noqa: BLE001 - surface the store's error clearly
         raise HTTPException(status_code=502, detail=f"Could not reach the store: {exc}")
