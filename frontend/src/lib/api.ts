@@ -107,6 +107,31 @@ export type ApprovalEdits = {
   attributes?: Record<string, string>;
 };
 
+/** Is an external store (Shopify) connected? The button only shows if so. */
+export async function getStoreStatus(): Promise<{ configured: boolean }> {
+  try {
+    const res = await fetch(`${API_BASE}/listings/store/status`);
+    return await json(res);
+  } catch {
+    return { configured: false };
+  }
+}
+
+export type StorePublishResult = {
+  id: number;
+  storefront_url: string | null;
+  admin_url: string;
+};
+
+/** Push an already-approved listing to her real storefront. */
+export async function publishToStore(id: string): Promise<StorePublishResult> {
+  const res = await fetch(`${API_BASE}/listings/${id}/publish-to-store`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  return json<StorePublishResult>(res);
+}
+
 export async function clarifyListing(
   id: string,
   answers: { cost_price_inr?: number; category?: string },

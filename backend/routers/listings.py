@@ -468,3 +468,69 @@ async def approve_listing(
         "ts": now,
     })
     return {"id": listing_id, "status": new_status}
+
+
+@router.get("/store/status")
+async def store_status():
+    """Whether pushing to an external store is available — the frontend only
+    shows the 'Send to your store' button when it is. Public: reveals nothing
+    but a boolean.
+    """
+    import shopify_store
+
+    return {"configured": shopify_store.is_configured()}
+
+
+@router.post("/{listing_id}/publish-to-store")
+async def publish_to_store(listing_id: str, seller_id: str = Depends(current_seller)):
+    """Push an already-approved listing to her real storefront (Shopify).
+
+    Gated on internal approval first: the LangGraph approval interrupt is where
+    she vouches for the listing, so nothing reaches an external store until it
+    has `status == 'published'`. This is a separate, post-approval action — not
+    a node in the crew — so a store outage can never block or corrupt a run.
+    """
+    import graph_store
+    import shopify_store
+
+    db = get_db()
+    oid = _listing_oid(listing_id)
+    doc = await db[LISTINGS].find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    require_listing_owner(doc, seller_id)
+
+    if doc.get("status") != "published":
+        raise HTTPException(
+            status_code=409,
+            detail="Approve and publish this listing first, then send it to your store.",
+        )
+    if not shopify_store.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="No store is connected yet. Ask the admin to set the Shopify keys.",
+        )
+
+    listing = doc.get("listing") or {}
+    price = (doc.get("price") or {}).get("selling_price_inr")
+    image_bytes = await asyncio.to_thread(graph_store.load_image_bytes, doc.get("image_ref"))
+
+    try:
+        result = await asyncio.to_thread(
+            shopify_store.create_product,
+            listing.get("title"),
+            listing.get("description"),
+            price,
+            image_bytes,
+            "product.jpg",
+            listing.get("keywords"),
+        )
+    except Exception as exc:  # noqa: BLE001 - surface the store's error clearly
+        raise HTTPException(status_code=502, detail=f"Could not reach the store: {exc}")
+
+    # Record where it went, so she can reopen the live page and we don't lose it.
+    await db[LISTINGS].update_one(
+        {"_id": oid},
+        {"$set": {"store_publish": {**result, "at": datetime.now(timezone.utc)}}},
+    )
+    return result

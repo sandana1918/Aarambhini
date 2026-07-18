@@ -12,7 +12,15 @@ import { FillMissingDetails } from '@/components/FillMissingDetails';
 import { Stepper, type StepId } from '@/components/Stepper';
 import { Tabs, type Tab } from '@/components/Tabs';
 import { Icon } from '@/components/icons';
-import { runListingStream, approveListing, clarifyListing, fetchMe } from '@/lib/api';
+import {
+  runListingStream,
+  approveListing,
+  clarifyListing,
+  fetchMe,
+  getStoreStatus,
+  publishToStore,
+  type StorePublishResult,
+} from '@/lib/api';
 import { useTranslatedList } from '@/lib/useTranslatedList';
 import { clearSession, loadSession, type Session } from '@/lib/session';
 import type { RunResult } from '@/lib/types';
@@ -157,6 +165,12 @@ export default function SellPage() {
   const [result, setResult] = useState<RunResult | null>(null);
   const [published, setPublished] = useState(false);
   const [rejected, setRejected] = useState(false);
+  // Pushing an approved listing to her real storefront (Shopify) — a separate,
+  // post-approval step, only offered when a store is actually connected.
+  const [storeConfigured, setStoreConfigured] = useState(false);
+  const [storeResult, setStoreResult] = useState<StorePublishResult | null>(null);
+  const [storeBusy, setStoreBusy] = useState(false);
+  const [storeError, setStoreError] = useState<string | null>(null);
   const [editPrice, setEditPrice] = useState<string>('');
   // null = untouched, so the field shows the crew's text without copying it into
   // state. Anything non-null is her edit, even when she clears it back to empty.
@@ -192,11 +206,37 @@ export default function SellPage() {
     };
   }, [router]);
 
+  // Ask once whether a store is connected, so the "Send to your store" button
+  // only appears when it will actually work.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { configured } = await getStoreStatus();
+      if (active) setStoreConfigured(configured);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   function onSignOut() {
     clearSession();
     setSession(null);
     setResult(null);
     router.push('/login');
+  }
+
+  async function onPublishToStore() {
+    if (!result) return;
+    setStoreBusy(true);
+    setStoreError(null);
+    try {
+      setStoreResult(await publishToStore(result.id));
+    } catch (e) {
+      setStoreError(e instanceof Error ? e.message : 'Could not send it to your store.');
+    } finally {
+      setStoreBusy(false);
+    }
   }
 
   function pickPhoto(f: File | null) {
@@ -210,6 +250,8 @@ export default function SellPage() {
     setResult(null);
     setPublished(false);
     setRejected(false);
+    setStoreResult(null);
+    setStoreError(null);
     setNotes('');
     setEditPrice('');
     setEditTitle(null);
@@ -783,16 +825,62 @@ export default function SellPage() {
                       <p className="mt-1.5 text-[13px] text-ink-2">
                         Your listing is live at ₹{result.price?.selling_price_inr}.
                       </p>
-                      <Link
-                        href="/sell"
-                        onClick={() => {
-                          setResult(null);
-                          setPublished(false);
-                        }}
-                        className="mt-5 inline-block rounded-xl border border-line bg-surface px-5 py-2.5 text-[13px] font-semibold text-ink-2 transition hover:border-brand-200"
-                      >
-                        Create another listing
-                      </Link>
+
+                      {/* Optional next step: push this approved listing to her
+                          real storefront. Only shown when a store is connected. */}
+                      {storeConfigured && !storeResult && (
+                        <div className="mx-auto mt-5 max-w-sm">
+                          <button
+                            onClick={onPublishToStore}
+                            disabled={storeBusy}
+                            className="w-full rounded-xl bg-brand py-3 text-[14px] font-semibold text-white shadow-lg shadow-brand/25 transition hover:bg-brand-600 active:scale-[0.99] disabled:opacity-60"
+                          >
+                            {storeBusy ? 'Sending to your store…' : 'Send to your online store'}
+                          </button>
+                          <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                            Puts this listing on your connected store as a real product page.
+                          </p>
+                          {storeError && (
+                            <p className="mt-2 rounded-lg bg-danger-bg px-3 py-2 text-[12px] text-danger">
+                              {storeError}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {storeResult && (
+                        <div className="mx-auto mt-5 max-w-sm rounded-xl border border-ok/40 bg-ok-bg/50 p-3.5 text-left">
+                          <p className="flex items-center gap-1.5 text-[13px] font-bold text-ok">
+                            <Icon name="check" size={14} /> Live on your store
+                          </p>
+                          <a
+                            href={storeResult.storefront_url ?? storeResult.admin_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1.5 block break-all text-[12px] font-medium text-brand underline underline-offset-2"
+                          >
+                            {storeResult.storefront_url ?? storeResult.admin_url}
+                          </a>
+                          <p className="mt-1.5 text-[10.5px] leading-relaxed text-muted">
+                            If the public page asks for a store password, remove it in your store&apos;s
+                            Online Store → Preferences.
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="mt-5">
+                        <Link
+                          href="/sell"
+                          onClick={() => {
+                            setResult(null);
+                            setPublished(false);
+                            setStoreResult(null);
+                          }}
+                          className="inline-block rounded-xl border border-line bg-surface px-5 py-2.5 text-[13px] font-semibold text-ink-2 transition hover:border-brand-200"
+                        >
+                          Create another listing
+                        </Link>
+                      </div>
                     </div>
                   ) : rejected ? (
                     <div className="text-center">

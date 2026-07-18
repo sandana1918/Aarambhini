@@ -53,6 +53,20 @@ def save_image(data: bytes, filename: str = "photo") -> str:
     return str(_get_fs().put(data, filename=filename))
 
 
+def load_image_bytes(image_ref):
+    """Raw image bytes for a ref, or None — for sending the photo to an external
+    store (Shopify wants base64 of the original bytes, not a re-encoded PIL image).
+    """
+    if not image_ref:
+        return None
+    try:
+        from bson import ObjectId
+
+        return _get_fs().get(ObjectId(image_ref)).read()
+    except Exception:  # noqa: BLE001 - a missing image just means no photo is sent
+        return None
+
+
 def load_image(image_ref):
     """Load a PIL.Image from a ref, or None. Never raises into the graph."""
     if not image_ref:
