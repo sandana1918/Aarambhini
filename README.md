@@ -263,3 +263,10 @@ These matter more than the demo:
 * **The review is translated, the printed compliance label is not.** Legal Metrology expects the label in English or Hindi. Aarambhini translates the explanation of it, never the legal text.
 * **Auth is real, but a password is the wrong credential for this seller.** Registration and login use phone and password (scrypt-hashed), and only the owner can act on a listing. The premise, though, is that she speaks once instead of typing, so phone plus OTP is the domain-correct answer. Passwords are a deliberate trade for a prototype with no SMS provider. There is no password reset yet, and login throttling is in-memory.
 * Anything not built yet is listed as such rather than implied.
+
+## License and attribution
+
+Aarambhini is released under the **MIT License** (see [LICENSE](LICENSE)).
+
+Full open-source attribution, listing every significant library with its version,
+license, role in the build, and source link, is in **[ATTRIBUTION.md](ATTRIBUTION.md)**.
