@@ -19,3 +19,18 @@ trust_qr_*.png
 
 # Throwaway review renders
 .codex_review/
+
+# Browser download temp files
+*.crdownload
+
+# Stray test images at repo root (app.py uses jute_bag.webp; frontend sample lives in frontend/public/)
+/*.jpg
+/*.jpeg
+/jute.webp
+
+# Word deliverables + Office lock files (kept outside the code repo)
+*.docx
+~$*
+
+# Internal handover notes, kept local, not published
+HANDOVER.md

@@ -37,10 +37,10 @@ The full application is deployed and running.
 2. **Log in** with a demo account:
    | Field | Value |
    |---|---|
-   | Phone | `9990000002` |
-   | Password | `ScriptedByHer2026` |
+   | Phone | `9897969514` |
+   | Password | `Scriptedforher` |
 
-   (Any phone from `9990000001` to `9990000007` works with the same password. Or click **Create an account** to register a fresh seller with your own details.)
+   (Or click **Create an account** to register a fresh seller with your own details.)
 3. On the sell page, either record a voice note or type a product description in the text box. A ready example is prefilled.
 4. Add one product photo. A sample jute-bag image is available at [this link](https://aarambhini.vercel.app/sample-jute-bag.webp) if you need one.
 5. Set a margin and click **Run Aarambhini**. Watch the seven agents stream in live, one at a time.
