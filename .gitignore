@@ -34,3 +34,9 @@ trust_qr_*.png
 
 # Internal handover notes, kept local, not published
 HANDOVER.md
+
+*.zip
+
+# Generated pitch decks + stray images (kept local, not source)
+outputs/
+juteeee.webp

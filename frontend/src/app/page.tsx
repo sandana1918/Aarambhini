@@ -9,6 +9,7 @@ const CREW: { name: string; role: string; desc: string; icon: IconName }[] = [
   { name: 'Daam', role: 'The Pricer', desc: 'Sets a fair price with a margin, and a discount floor you should never go below.', icon: 'rupee' },
   { name: 'Niyam', role: 'The Rulekeeper', desc: 'Checks GST, labels and licences — and blocks the listing until they are right.', icon: 'scale' },
   { name: 'Wapsi', role: 'The Returns Guard', desc: 'Predicts why a buyer would return it, and fixes the listing before that happens.', icon: 'refresh' },
+  { name: 'Packaging', role: 'The Packer', desc: 'Builds a safe packing plan — poly bag, mailer or box — from what’s fragile or perishable in your category.', icon: 'package' },
 ];
 
 const LOOPS = [
@@ -214,7 +215,7 @@ export default function Home() {
               {
                 n: '2',
                 t: 'The agents argue it out',
-                d: 'Six agents write, price, and legally check your listing — rejecting and re-doing each other’s work until it’s right.',
+                d: 'Seven agents write, price, and legally check your listing — rejecting and re-doing each other’s work until it’s right.',
               },
               {
                 n: '3',
@@ -269,7 +270,7 @@ export default function Home() {
           <div className="mx-auto max-w-6xl px-5 py-20">
             <p className="text-xs font-bold uppercase tracking-widest text-brand">The crew</p>
             <h2 className="mt-3 text-2xl font-bold text-ink sm:text-3xl">
-              Six agents. One co-founder.
+              Seven agents. One co-founder.
             </h2>
             <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {CREW.map((a) => (
