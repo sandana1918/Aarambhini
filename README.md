@@ -24,7 +24,7 @@
 
 ---
 
-## Try it live (for judges)
+## Try it live
 
 The full application is deployed and running.
 
