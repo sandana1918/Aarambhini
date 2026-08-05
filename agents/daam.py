@@ -3,9 +3,8 @@
 price = cost + shipping + extra_overhead + margin
 discount_floor = break-even (cost + shipping + overhead) — never sell below this.
 """
+import csv
 import os
-
-import pandas as pd
 
 _CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "price_benchmarks.csv")
 
@@ -13,9 +12,16 @@ _benchmarks = None
 
 
 def _load_benchmarks():
+    """The benchmark table as {category: row-dict}, read once.
+
+    Stdlib csv, not pandas: it is 13 static rows, and importing pandas + numpy
+    into the API process just to look one up cost ~60 MB of RSS — real headroom
+    on a 512 MB host. A plain dict does the same lookups.
+    """
     global _benchmarks
     if _benchmarks is None:
-        _benchmarks = pd.read_csv(_CSV_PATH).set_index("category")
+        with open(_CSV_PATH, newline="", encoding="utf-8") as f:
+            _benchmarks = {r["category"]: r for r in csv.DictReader(f)}
     return _benchmarks
 
 
@@ -25,8 +31,8 @@ def run(cost_price_inr, category, desired_margin_pct=20, extra_overhead_inr=0):
     cost = int(cost_price_inr or 0)
     overhead = int(extra_overhead_inr or 0)
 
-    if category in bench.index:
-        row = bench.loc[category]
+    row = bench.get(category)
+    if row:
         shipping = int(row["shipping_flat_inr"])
         low = int(row["typical_low_inr"])
         high = int(row["typical_high_inr"])
@@ -51,7 +57,7 @@ def run(cost_price_inr, category, desired_margin_pct=20, extra_overhead_inr=0):
             "margin_inr": int(margin_inr),
         },
         "within_typical_range": bool(low <= selling_price <= high),
-        "typical_range_inr": [low, high] if category in bench.index else None,
+        "typical_range_inr": [low, high] if row else None,
         "extra_overhead_absorbed_inr": overhead,
     }
 

@@ -3,9 +3,8 @@
 No LLM. Reads the same benchmarks table Daam uses, so fragile/perishable stay in
 one place. Returns a plan the seller can act on and that lowers return risk.
 """
+import csv
 import os
-
-import pandas as pd
 
 _CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "price_benchmarks.csv")
 
@@ -13,17 +12,27 @@ _benchmarks = None
 
 
 def _load_benchmarks():
+    """The same 13-row benchmarks table Daam uses, as {category: row-dict}.
+
+    Stdlib csv, not pandas — see agents/daam.py for why the API process should
+    not carry pandas + numpy just to read a static table.
+    """
     global _benchmarks
     if _benchmarks is None:
-        _benchmarks = pd.read_csv(_CSV_PATH).set_index("category")
+        with open(_CSV_PATH, newline="", encoding="utf-8") as f:
+            _benchmarks = {r["category"]: r for r in csv.DictReader(f)}
     return _benchmarks
 
 
+def _truthy(value):
+    """The CSV stores fragile/perishable as the strings 'true'/'false'."""
+    return str(value or "").strip().lower() in ("true", "1", "yes")
+
+
 def _flags(category):
-    bench = _load_benchmarks()
-    if category in bench.index:
-        row = bench.loc[category]
-        return bool(row.get("fragile", False)), bool(row.get("perishable", False))
+    row = _load_benchmarks().get(category)
+    if row:
+        return _truthy(row.get("fragile")), _truthy(row.get("perishable"))
     return False, False
 
 
