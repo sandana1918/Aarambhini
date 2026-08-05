@@ -89,6 +89,19 @@ def test_seller_only_field_is_nulled_even_if_the_caller_tries_to_sneak_one_in():
     assert "Age Group" in missing
 
 
+def test_explicit_free_size_from_seller_is_kept():
+    # Size is still seller-only: the model may not invent it. But if her own
+    # intake words literally say free size, asking again is needless friction.
+    attrs, missing = suno._finalize_attributes(
+        "handloom_textiles",
+        {"color": "Beige and Blue", "fabric": "Jute"},
+        "Jute",
+        "मैं हाथ से बने जूट बैग बनाती हूँ, ₹130 लागत, free size",
+    )
+    assert attrs.get("size") == "Free Size"
+    assert "Size" not in missing
+
+
 def test_fixed_field_is_never_left_to_the_model_or_to_her():
     attrs, _ = suno._finalize_attributes("toys_games", {}, "Cotton")
     assert attrs.get("country_of_origin") == "India"

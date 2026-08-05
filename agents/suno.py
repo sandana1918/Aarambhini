@@ -266,6 +266,23 @@ def _missing_required(fields, values):
     return missing
 
 
+def _extract_stated_size(text, options=None):
+    """A size the seller explicitly said, mapped to marketplace wording.
+
+    Seller-only fields still cannot be guessed by the model. This only accepts
+    unambiguous phrases from her own intake text, e.g. "free size", so she is
+    not asked again for a fact she already gave.
+    """
+    said = (text or "").strip().lower()
+    opts = options or []
+    if not said:
+        return None
+
+    if re.search(r"\b(?:free[\s-]?size|one[\s-]?size|universal[\s-]?size)\b", said):
+        return "Free Size" if "Free Size" in opts else "Free Size"
+    return None
+
+
 def _deterministic_attrs(fields, material, size, colour):
     """Fill what we can with no model — fallback and safety net."""
     out = {}
@@ -289,13 +306,15 @@ def _deterministic_attrs(fields, material, size, colour):
     return out
 
 
-def _finalize_attributes(category, raw, material):
+def _finalize_attributes(category, raw, material, voice_text=None):
     """Merge model output with fixed values + deterministic backfill; report gaps."""
     fields = _attr_fields_for(category)
     if not fields:
         return {}, []
     raw = raw if isinstance(raw, dict) else {}
-    det = _deterministic_attrs(fields, material, raw.get("size"), raw.get("color"))
+    size_field = next((f for f in fields if f["key"] == "size"), {})
+    stated_size = _extract_stated_size(voice_text, size_field.get("options"))
+    det = _deterministic_attrs(fields, material, stated_size, raw.get("color"))
 
     attributes = {}
     for f in fields:
@@ -306,8 +325,10 @@ def _finalize_attributes(category, raw, material):
             attributes[key] = det.get(key)  # derived, never the model's guess
         elif _seller_only(f):
             # Hers to state. Left empty on purpose so it reaches her as a
-            # question instead of arriving as a confident fabrication.
-            attributes[key] = None
+            # question instead of arriving as a confident fabrication. If she
+            # already stated an exact value in the intake text ("free size"),
+            # keep it so we don't ask the same question twice.
+            attributes[key] = det.get(key)
         else:
             v = raw.get(key)
             attributes[key] = v if v not in (None, "", []) else det.get(key)
@@ -400,7 +421,7 @@ def _fallback(voice_text, image):
     product_name = _NAME_BY_CATEGORY.get(category, "handmade product")
     material = _MATERIAL_BY_CATEGORY.get(category)
 
-    product_attributes, missing = _finalize_attributes(category, {}, material)
+    product_attributes, missing = _finalize_attributes(category, {}, material, voice_text)
     return {
         "product_name": product_name,
         "quantity": quantity,
@@ -515,7 +536,7 @@ Return STRICT JSON only, exactly these keys:
         cost = _extract_rupees(voice_text)
 
     product_attributes, missing = _finalize_attributes(
-        category, raw.get("product_attributes"), material
+        category, raw.get("product_attributes"), material, voice_text
     )
     return {
         "product_name": product_name,
