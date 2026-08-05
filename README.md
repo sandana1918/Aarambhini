@@ -108,32 +108,7 @@ product exists to solve.
 
 **System, high-level design** (browser to Vercel to Render/FastAPI to the LangGraph crew to Atlas and the AI providers):
 
-```mermaid
-flowchart TB
-    FE["<b>FRONTEND — Next.js (browser)</b><br/>Landing page · /sell flow · Voice Recorder · Live Agent Timeline · Product Details"]
-    BE["<b>BACKEND — FastAPI</b><br/>POST /listings/run · /run/stream (SSE) · /transcribe · /clarify · /approve · /return"]
-    ORCH["<b>ORCHESTRATOR — LangGraph crew (orchestrator.py)</b><br/>Mukhiya · Suno · Likho · Daam · Niyam · Wapsi · Packaging<br/>3 self-correcting loops + 2 human-in-the-loop interrupts + Mongo checkpoints"]
-    AI["<b>AI MODELS</b><br/>Sarvam Saarika — speech-to-text<br/>Sarvam Mayura — translate · Sarvam Bulbul — text-to-speech<br/>Google Gemini — reasoning + vision"]
-    DB["<b>MONGODB ATLAS</b><br/>sellers · listings · compliance_rules · price_benchmarks<br/>image_fingerprints · return_events · audit_log · checkpoints<br/>product_images (GridFS)"]
-
-    FE <-->|"HTTP / SSE"| BE
-    BE <-->|"run · stream · resume"| ORCH
-    ORCH -->|"reason · vision"| AI
-    ORCH -->|"checkpoints · read rules/prices"| DB
-    BE -.->|"STT (/transcribe)"| AI
-    BE -.->|"persist listings · audit · images"| DB
-
-    classDef fe fill:#e8eefc,stroke:#4666c4,color:#17161a;
-    classDef be fill:#e6f4ea,stroke:#3a9d5d,color:#17161a;
-    classDef orch fill:#efe8fb,stroke:#8257d4,color:#17161a;
-    classDef ai fill:#fdf0e3,stroke:#e0912a,color:#17161a;
-    classDef db fill:#fde7f1,stroke:#e01d84,color:#17161a;
-    class FE fe;
-    class BE be;
-    class ORCH orch;
-    class AI ai;
-    class DB db;
-```
+<p align="center"><img src="docs/hld-diagram.png" alt="System high-level design" width="820"></p>
 
 **The agent crew, as a LangGraph state machine** (the 3 self-correcting loops and the 2 interrupts):
 
