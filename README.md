@@ -110,78 +110,29 @@ product exists to solve.
 
 ```mermaid
 flowchart TB
-    subgraph client["🖥️ Client — Next.js 16 / React 19 (frontend/)"]
-        LP["Landing page<br/>/"]
-        SELL["Seller flow<br/>/sell"]
-        REC["VoiceRecorder<br/>mic → 16kHz mono WAV"]
-        TL["AgentTimeline<br/>live loop view"]
-    end
+    FE["<b>FRONTEND — Next.js (browser)</b><br/>Landing page · /sell flow · Voice Recorder · Live Agent Timeline · Product Details"]
+    BE["<b>BACKEND — FastAPI</b><br/>POST /listings/run · /run/stream (SSE) · /transcribe · /clarify · /approve · /return"]
+    ORCH["<b>ORCHESTRATOR — LangGraph crew (orchestrator.py)</b><br/>Mukhiya · Suno · Likho · Daam · Niyam · Wapsi · Packaging<br/>3 self-correcting loops + 2 human-in-the-loop interrupts + Mongo checkpoints"]
+    AI["<b>AI MODELS</b><br/>Sarvam Saarika — speech-to-text<br/>Sarvam Mayura — translate · Sarvam Bulbul — text-to-speech<br/>Google Gemini — reasoning + vision"]
+    DB["<b>MONGODB ATLAS</b><br/>sellers · listings · compliance_rules · price_benchmarks<br/>image_fingerprints · return_events · audit_log · checkpoints<br/>product_images (GridFS)"]
 
-    subgraph api["⚙️ API — FastAPI (backend/)"]
-        R1["POST /listings/transcribe<br/>speech → text"]
-        R2["POST /listings/run<br/>voice_text + photo → listing"]
-        R3["POST /listings/:id/approve<br/>the approval gate"]
-        R4["/sellers · /rules"]
-        R5["POST /language/translate · /speak<br/>review in her language"]
-        HP["GET /health"]
-    end
+    FE <-->|"HTTP / SSE"| BE
+    BE <-->|"run · stream · resume"| ORCH
+    ORCH -->|"reason · vision"| AI
+    ORCH -->|"checkpoints · read rules/prices"| DB
+    BE -.->|"STT (/transcribe)"| AI
+    BE -.->|"persist listings · audit · images"| DB
 
-    subgraph crew["🤖 Agent crew — LangGraph state machine (orchestrator.py)"]
-        MUK["Mukhiya<br/>orchestrator + gates"]
-        SUNO["Suno 👂"]
-        LIKHO["Likho ✍️"]
-        DAAM["Daam 💰"]
-        NIYAM["Niyam ⚖️"]
-        WAPSI["Wapsi 🔄"]
-        PACK["Packaging 📦"]
-    end
-
-    subgraph llm["🧠 LLM · STT · translate · TTS layer (llm.py)"]
-        GEM["Google Gemini<br/>gemini-flash-latest"]
-        STT["transcribe_audio()"]
-        SARV["Sarvam Saarika<br/>saarika:v2.5 · STT"]
-        MAY["Sarvam Mayura<br/>mayura:v1 · translate"]
-        BUL["Sarvam Bulbul<br/>bulbul:v2 · TTS"]
-    end
-
-    subgraph data["🗄️ MongoDB Atlas (backend/db.py)"]
-        C1[("sellers")]
-        C2[("listings")]
-        C3[("compliance_rules")]
-        C4[("price_benchmarks")]
-        C5[("image_fingerprints")]
-        C6[("audit_log")]
-    end
-
-    SELL --> REC
-    REC -->|WAV| R1
-    R1 --> STT
-    STT -->|primary| SARV
-    STT -.fallback.-> GEM
-    SELL -->|voice_text + photo| R2
-    SELL --> TL
-    R2 --> MUK
-    R3 --> C2
-    R3 --> C6
-
-    MUK --> SUNO & LIKHO & DAAM & NIYAM & WAPSI & PACK
-    SUNO --> GEM
-    LIKHO --> GEM
-    NIYAM --> GEM
-    WAPSI --> GEM
-
-    SUNO -. reads .-> C3
-    NIYAM -. reads .-> C3
-    DAAM -. reads .-> C4
-    PACK -. reads .-> C4
-    R2 -->|persist result| C2
-    R4 --> C1 & C3
-    SELL -->|review in her language| R5
-    R5 -->|translate| MAY
-    R5 -->|speak| BUL
-
-    classDef store fill:#fde7f1,stroke:#e01d84,color:#17161a;
-    class C1,C2,C3,C4,C5,C6 store;
+    classDef fe fill:#e8eefc,stroke:#4666c4,color:#17161a;
+    classDef be fill:#e6f4ea,stroke:#3a9d5d,color:#17161a;
+    classDef orch fill:#efe8fb,stroke:#8257d4,color:#17161a;
+    classDef ai fill:#fdf0e3,stroke:#e0912a,color:#17161a;
+    classDef db fill:#fde7f1,stroke:#e01d84,color:#17161a;
+    class FE fe;
+    class BE be;
+    class ORCH orch;
+    class AI ai;
+    class DB db;
 ```
 
 **The agent crew, as a LangGraph state machine** (the 3 self-correcting loops and the 2 interrupts):
