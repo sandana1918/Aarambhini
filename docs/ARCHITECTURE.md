@@ -26,6 +26,7 @@ flowchart TB
         R2["POST /listings/run<br/>voice_text + photo → listing"]
         R3["POST /listings/:id/approve<br/>the approval gate"]
         R4["/sellers · /rules"]
+        R5["POST /language/translate · /speak<br/>review in her language"]
         HP["GET /health"]
     end
 
@@ -39,10 +40,12 @@ flowchart TB
         PACK["Packaging 📦"]
     end
 
-    subgraph llm["🧠 LLM & STT layer (llm.py)"]
+    subgraph llm["🧠 LLM · STT · translate · TTS layer (llm.py)"]
         GEM["Google Gemini<br/>gemini-flash-latest"]
         STT["transcribe_audio()"]
-        SARV["Sarvam Saarika<br/>saarika:v2.5 · primary"]
+        SARV["Sarvam Saarika<br/>saarika:v2.5 · STT"]
+        MAY["Sarvam Mayura<br/>mayura:v1 · translate"]
+        BUL["Sarvam Bulbul<br/>bulbul:v2 · TTS"]
     end
 
     subgraph data["🗄️ MongoDB Atlas (backend/db.py)"]
@@ -77,6 +80,9 @@ flowchart TB
     PACK -. reads .-> C4
     R2 -->|persist result| C2
     R4 --> C1 & C3
+    SELL -->|review in her language| R5
+    R5 -->|translate| MAY
+    R5 -->|speak| BUL
 
     classDef store fill:#fde7f1,stroke:#e01d84,color:#17161a;
     class C1,C2,C3,C4,C5,C6 store;

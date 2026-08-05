@@ -108,11 +108,120 @@ product exists to solve.
 
 **System, high-level design** (browser to Vercel to Render/FastAPI to the LangGraph crew to Atlas and the AI providers):
 
-<p align="center"><img src="docs/hld-diagram.png" alt="System high-level design" width="820"></p>
+```mermaid
+flowchart TB
+    subgraph client["🖥️ Client — Next.js 16 / React 19 (frontend/)"]
+        LP["Landing page<br/>/"]
+        SELL["Seller flow<br/>/sell"]
+        REC["VoiceRecorder<br/>mic → 16kHz mono WAV"]
+        TL["AgentTimeline<br/>live loop view"]
+    end
+
+    subgraph api["⚙️ API — FastAPI (backend/)"]
+        R1["POST /listings/transcribe<br/>speech → text"]
+        R2["POST /listings/run<br/>voice_text + photo → listing"]
+        R3["POST /listings/:id/approve<br/>the approval gate"]
+        R4["/sellers · /rules"]
+        R5["POST /language/translate · /speak<br/>review in her language"]
+        HP["GET /health"]
+    end
+
+    subgraph crew["🤖 Agent crew — LangGraph state machine (orchestrator.py)"]
+        MUK["Mukhiya<br/>orchestrator + gates"]
+        SUNO["Suno 👂"]
+        LIKHO["Likho ✍️"]
+        DAAM["Daam 💰"]
+        NIYAM["Niyam ⚖️"]
+        WAPSI["Wapsi 🔄"]
+        PACK["Packaging 📦"]
+    end
+
+    subgraph llm["🧠 LLM · STT · translate · TTS layer (llm.py)"]
+        GEM["Google Gemini<br/>gemini-flash-latest"]
+        STT["transcribe_audio()"]
+        SARV["Sarvam Saarika<br/>saarika:v2.5 · STT"]
+        MAY["Sarvam Mayura<br/>mayura:v1 · translate"]
+        BUL["Sarvam Bulbul<br/>bulbul:v2 · TTS"]
+    end
+
+    subgraph data["🗄️ MongoDB Atlas (backend/db.py)"]
+        C1[("sellers")]
+        C2[("listings")]
+        C3[("compliance_rules")]
+        C4[("price_benchmarks")]
+        C5[("image_fingerprints")]
+        C6[("audit_log")]
+    end
+
+    SELL --> REC
+    REC -->|WAV| R1
+    R1 --> STT
+    STT -->|primary| SARV
+    STT -.fallback.-> GEM
+    SELL -->|voice_text + photo| R2
+    SELL --> TL
+    R2 --> MUK
+    R3 --> C2
+    R3 --> C6
+
+    MUK --> SUNO & LIKHO & DAAM & NIYAM & WAPSI & PACK
+    SUNO --> GEM
+    LIKHO --> GEM
+    NIYAM --> GEM
+    WAPSI --> GEM
+
+    SUNO -. reads .-> C3
+    NIYAM -. reads .-> C3
+    DAAM -. reads .-> C4
+    PACK -. reads .-> C4
+    R2 -->|persist result| C2
+    R4 --> C1 & C3
+    SELL -->|review in her language| R5
+    R5 -->|translate| MAY
+    R5 -->|speak| BUL
+
+    classDef store fill:#fde7f1,stroke:#e01d84,color:#17161a;
+    class C1,C2,C3,C4,C5,C6 store;
+```
 
 **The agent crew, as a LangGraph state machine** (the 3 self-correcting loops and the 2 interrupts):
 
-<p align="center"><img src="docs/agent-flow-diagram.png" alt="Agent flow, LangGraph state machine" width="820"></p>
+```mermaid
+flowchart TD
+    START([START]) --> SUNO["Suno<br/>intake + photo/authenticity gate"]
+
+    SUNO -->|photo_ok = false| REJECT["reject<br/>status: needs_retake"]
+    SUNO -->|photo_ok = true| CLARIFY["clarify<br/>interrupt() only for a blocking<br/>gap (e.g. no price stated)"]
+    CLARIFY --> LIKHO["Likho<br/>write / rewrite listing"]
+    REJECT --> ENDR([END])
+
+    LIKHO --> AFTER{"after_likho:<br/>which loop?"}
+    AFTER -->|default| REVIEW["Mukhiya review<br/>quality rubric"]
+    AFTER -->|in compliance loop| DAAM["Daam<br/>price / re-price"]
+    AFTER -->|return mitigated| FINAL["finalize<br/>status: ready_for_approval"]
+
+    REVIEW -->|gaps found| LIKHO
+    REVIEW -->|quality_ok| DAAM
+
+    DAAM --> NIYAM["Niyam<br/>compliance check"]
+    NIYAM -->|not compliant yet| LIKHO
+    NIYAM -->|compliant or max tries| PACK["Packaging<br/>packing plan"]
+
+    PACK --> WAPSI["Wapsi<br/>returns forecast"]
+    WAPSI --> RR{"Mukhiya<br/>return review"}
+    RR -->|high risk| LIKHO
+    RR -->|acceptable| FINAL
+
+    FINAL --> APPROVAL["approval<br/>interrupt() — PAUSES here,<br/>state checkpointed to Mongo"]
+    APPROVAL -->|"resume: publish / reject / edit"| ENDF([END])
+
+    linkStyle 9 stroke:#f43397,stroke-width:2px;
+    linkStyle 12 stroke:#dc2626,stroke-width:2px;
+    linkStyle 16 stroke:#f59e0b,stroke-width:2px;
+
+    classDef gate fill:#fff,stroke:#7c7a87,stroke-dasharray:4 3;
+    class AFTER,RR gate;
+```
 
 Full detail (schemas, per-agent behaviour, sequence diagrams) lives in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
@@ -247,7 +356,7 @@ frontend/src/
   components/         Stepper, Tabs, VoiceRecorder, ReviewInHerLanguage, FillMissingDetails, and more
   lib/                api.ts, session.ts, types.ts, recorder.ts (mic to 16kHz WAV)
 tests/                Tier 1 pure functions plus Tier 2 real-graph runs (65, pytest)
-docs/                 ARCHITECTURE.md, hld-diagram.png (system), agent-flow-diagram.png (crew)
+docs/                 ARCHITECTURE.md (schemas, per-agent behaviour, sequence diagrams)
 Dockerfile, render.yaml, DEPLOY.md   API container, Render blueprint, deploy walkthrough
 ```
 
