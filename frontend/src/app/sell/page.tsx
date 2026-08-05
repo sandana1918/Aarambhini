@@ -17,6 +17,7 @@ import {
   approveListing,
   clarifyListing,
   fetchMe,
+  getListing,
   getStoreStatus,
   publishToStore,
   type StorePublishResult,
@@ -188,6 +189,9 @@ export default function SellPage() {
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
+  // True while re-opening an existing listing (?id=…) from "My listings" — she
+  // sees a loader, not the blank create form, until its review is on screen.
+  const [hydrating, setHydrating] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // A stored token can be expired, revoked, or signed with a restarted dev
@@ -199,8 +203,30 @@ export default function SellPage() {
       const stored = loadSession();
       const me = stored ? await fetchMe() : null;
       if (!active) return;
-      if (me) setSession(stored);
-      else router.replace('/login'); // replace: back shouldn't return here
+      if (!me) {
+        router.replace('/login'); // replace: back shouldn't return here
+        return;
+      }
+      setSession(stored);
+
+      // Re-opening a saved listing from "My listings": load it straight into the
+      // same review UI a fresh run produces, so the whole approve/publish flow is
+      // reused rather than rebuilt. Read the id off the URL directly to avoid a
+      // Suspense-bound useSearchParams for one query param.
+      const id =
+        typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('id')
+          : null;
+      if (!id) return;
+      setHydrating(true);
+      try {
+        const loaded = await getListing(id);
+        if (active) setResult(loaded);
+      } catch (e) {
+        if (active) setError(e instanceof Error ? e.message : 'Could not open that listing.');
+      } finally {
+        if (active) setHydrating(false);
+      }
     })();
     return () => {
       active = false;
@@ -424,12 +450,15 @@ export default function SellPage() {
 
         <div className="space-y-6">
           {/* ── STEP 1 — TELL US ──────────────────── */}
-          {!session ? (
-            /* Either still checking, or already being redirected to /login. */
+          {!session || hydrating ? (
+            /* Still checking the session / redirecting to login, or re-opening a
+               saved listing from "My listings". */
             <section className="card p-5">
               <div className="flex items-center gap-3">
                 <span className="h-5 w-5 animate-spin rounded-full border-[3px] border-brand-100 border-t-brand" />
-                <p className="text-[13px] text-muted">Checking your session…</p>
+                <p className="text-[13px] text-muted">
+                  {hydrating ? 'Opening your listing…' : 'Checking your session…'}
+                </p>
               </div>
             </section>
           ) : step !== 1 ? null : (

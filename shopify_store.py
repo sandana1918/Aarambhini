@@ -93,16 +93,57 @@ def _label_to_bullets(label: str) -> str:
     return "".join(f"<li>{it}</li>" for it in items)
 
 
-def _body_html(marketing: str, label: str) -> str:
-    """Buyer-facing copy first, then the legal/compliance details as their own
-    section — not run on to the end of the marketing paragraph.
+# Friendly, buyer-facing names for the raw attribute keys Likho fills in.
+# Anything not listed falls back to a title-cased version of the key, so a new
+# attribute still renders sensibly instead of being dropped.
+_ATTR_LABELS = {
+    "color": "Colour",
+    "colour": "Colour",
+    "material": "Material",
+    "type": "Type",
+    "gender": "Gender",
+    "size": "Size",
+    "age_group": "Age Group",
+    "net_quantity": "Net Quantity",
+    "compartments": "No. of Compartments",
+    "dimensions": "Dimensions",
+    "country_of_origin": "Country of Origin",
+}
+
+
+def _attr_rows(attributes: dict) -> str:
+    """The full product spec (Colour, Gender, Type, Dimensions, ...) as list
+    items. Skips empty values so a half-filled attribute never shows as a blank
+    line, and gives each key a human label rather than a snake_case one.
+    """
+    if not attributes:
+        return ""
+    items = []
+    for key, value in attributes.items():
+        if value in (None, "", []):
+            continue
+        name = _ATTR_LABELS.get(key, key.replace("_", " ").title())
+        items.append(f"<li><strong>{name}:</strong> {value}</li>")
+    return "".join(items)
+
+
+def _body_html(marketing: str, label: str, attributes: dict = None) -> str:
+    """Buyer-facing copy first, then the full product spec, then the legal/
+    compliance details — each as its own section, not run on to the end of the
+    marketing paragraph.
     """
     html = ""
     if marketing:
         html += "<p>" + marketing.replace("\n", "<br>") + "</p>"
+    attr_rows = _attr_rows(attributes)
+    if attr_rows:
+        html += (
+            '<hr><p><strong>Product details</strong></p>'
+            f"<ul>{attr_rows}</ul>"
+        )
     if label:
         html += (
-            '<hr><p><strong>Product &amp; compliance details</strong></p>'
+            '<hr><p><strong>Compliance details</strong></p>'
             f"<ul>{_label_to_bullets(label)}</ul>"
         )
     return html
@@ -116,6 +157,7 @@ def create_product(
     image_filename: str = None,
     tags=None,
     label: str = "",
+    attributes: dict = None,
 ) -> dict:
     """Create a product on the store. Returns {id, storefront_url, admin_url}.
 
@@ -134,7 +176,7 @@ def create_product(
 
     product = {
         "title": (title or "Handmade product").strip(),
-        "body_html": _body_html(description, label),
+        "body_html": _body_html(description, label, attributes),
         "vendor": "Aarambhini",
         "status": "active",
         # A price of None would make an unbuyable product; default to a variant

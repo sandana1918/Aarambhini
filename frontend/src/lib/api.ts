@@ -204,6 +204,31 @@ export async function approveListing(
   return json(res);
 }
 
+/** One row on the "My listings" shelf — a light summary, not the full run. */
+export type ListingSummary = {
+  id: string;
+  status: string;
+  title: string | null;
+  price: number | null;
+  on_store: boolean;
+  store_url: string | null;
+  created_at: string | null;
+  thumb: string | null;
+};
+
+/** Every listing the signed-in seller owns, newest first. */
+export async function listMyListings(): Promise<ListingSummary[]> {
+  const res = await fetch(`${API_BASE}/listings`, { headers: authHeaders() });
+  const data = await json<{ listings: ListingSummary[] }>(res);
+  return data.listings;
+}
+
+/** Re-open a single listing (to resume its review, or read it back). */
+export async function getListing(id: string): Promise<RunResult> {
+  const res = await fetch(`${API_BASE}/listings/${id}`, { headers: authHeaders() });
+  return json(res);
+}
+
 export type PendingField = {
   key: string;
   label: string;

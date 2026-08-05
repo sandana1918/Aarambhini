@@ -385,6 +385,96 @@ async def report_return(
     return {"listing_id": listing_id, "recorded": True, "reason": report.reason, "category": category}
 
 
+def _thumb_data_uri(image_ref) -> Optional[str]:
+    """A small JPEG thumbnail as a data: URI, or None.
+
+    Embedded in the (authenticated) list response on purpose: an <img> tag can't
+    carry the session's Bearer token, so a separate image URL would either need
+    the token in the query string (which leaks it) or be left open (which leaks
+    her photos by id). Shipping a downscaled thumbnail inline keeps the photo
+    behind the same owner check as the rest of the listing.
+    """
+    if not image_ref:
+        return None
+    try:
+        import io
+        import base64
+        import graph_store
+        from PIL import Image
+
+        raw = graph_store.load_image_bytes(image_ref)
+        if not raw:
+            return None
+        img = Image.open(io.BytesIO(raw))
+        # Decode at reduced resolution (JPEG DCT scaling) so a multi-megapixel
+        # phone photo never fully materialises in RAM just to make a 120px
+        # thumbnail — this is what keeps the list endpoint flat on a 512 MB host.
+        img.draft("RGB", (160, 160))
+        img = img.convert("RGB")
+        img.thumbnail((120, 120))
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=70)
+        img.close()
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception:  # noqa: BLE001 - a thumbnail is a nicety, never a hard failure
+        return None
+
+
+@router.get("")
+async def my_listings(seller_id: str = Depends(current_seller)):
+    """Every listing this seller owns, newest first — the 'save now, publish
+    later' shelf. Scoped to the authenticated seller, never a client-supplied id,
+    so one seller can never enumerate another's listings.
+    """
+    db = get_db()
+    cursor = (
+        db[LISTINGS]
+        .find(
+            {"seller_id": _oid_or_none(seller_id)},
+            {
+                "status": 1,
+                "listing.title": 1,
+                "price.selling_price_inr": 1,
+                "price.discount_floor_inr": 1,
+                "store_publish": 1,
+                "image_ref": 1,
+                "created_at": 1,
+                "updated_at": 1,
+            },
+        )
+        .sort("created_at", -1)
+        .limit(100)
+    )
+    docs = await cursor.to_list(length=100)
+
+    # Thumbnails hit GridFS per listing; build them off the event loop, but cap
+    # how many decode at once — loading every image concurrently is a memory
+    # spike that would OOM a small instance for a seller with many listings.
+    sem = asyncio.Semaphore(4)
+
+    async def _thumb(ref):
+        async with sem:
+            return await asyncio.to_thread(_thumb_data_uri, ref)
+
+    thumbs = await asyncio.gather(*[_thumb(d.get("image_ref")) for d in docs])
+
+    items = []
+    for d, thumb in zip(docs, thumbs):
+        store = d.get("store_publish") or {}
+        created = d.get("created_at")
+        items.append({
+            "id": str(d["_id"]),
+            "status": d.get("status"),
+            "title": (d.get("listing") or {}).get("title"),
+            "price": (d.get("price") or {}).get("selling_price_inr"),
+            "on_store": bool(store),
+            "store_url": store.get("storefront_url") or store.get("admin_url"),
+            "created_at": created.isoformat() if created else None,
+            "thumb": thumb,
+        })
+    return {"listings": items}
+
+
 @router.get("/{listing_id}")
 async def get_listing(listing_id: str):
     # Deliberately still open: the frontend reads back the listing it just
@@ -550,6 +640,7 @@ async def publish_to_store(listing_id: str, seller_id: str = Depends(current_sel
             "product.jpg",
             listing.get("keywords"),
             label_text,
+            doc.get("product_attributes"),
         )
     except Exception as exc:  # noqa: BLE001 - surface the store's error clearly
         raise HTTPException(status_code=502, detail=f"Could not reach the store: {exc}")

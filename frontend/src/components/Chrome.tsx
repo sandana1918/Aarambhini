@@ -36,6 +36,12 @@ export function Header() {
             The crew
           </Link>
           <Link
+            href="/listings"
+            className="rounded-lg px-3 py-2 text-sm font-medium text-ink-2 transition hover:bg-brand-50 hover:text-brand-700"
+          >
+            My listings
+          </Link>
+          <Link
             href="/sell"
             className="rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-600 active:scale-[0.98]"
           >
