@@ -16,6 +16,10 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 _API_KEY = os.getenv("GEMINI_API_KEY")
 _MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+# A sibling model to fall back to when the primary is overloaded/unavailable, so
+# one model's "high demand" (503) spike doesn't take intake down. Only used when
+# it differs from the primary; override per-env with GEMINI_FALLBACK_MODEL.
+_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-flash-latest")
 
 _client = None
 
@@ -34,8 +38,20 @@ def _get_client():
 
 
 def _is_rate_limit(exc):
+    """A per-minute rate limit (429 / RESOURCE_EXHAUSTED). Clears once the minute
+    window rolls over, so a short sleep-and-retry on the SAME model is the fix."""
     s = str(exc)
     return "RESOURCE_EXHAUSTED" in s or "429" in s
+
+
+def _is_transient(exc):
+    """A retryable server-side hiccup: a rate limit (see _is_rate_limit) OR the
+    model momentarily overloaded (503 / UNAVAILABLE — "high demand"). An overload
+    won't clear on a quick sleep, so it's handled by switching to a sibling model
+    rather than waiting. A hard quota-out still raises, and the calling agent
+    then takes its deterministic path."""
+    s = str(exc)
+    return _is_rate_limit(exc) or "UNAVAILABLE" in s or "503" in s
 
 
 def _retry_delay_seconds(exc, default=6.0, cap=8.0):
@@ -51,23 +67,41 @@ def llm(prompt, image=None, rate_limit_retries=1):
     image  : PIL.Image.Image | None  (Gemini reads it natively)
     returns: str  (raw model text)
 
-    Swap providers by rewriting only this function. On a transient rate-limit
-    (per-minute) it retries briefly; if the model is truly exhausted it raises,
-    and the calling agent falls back to its deterministic path.
+    Swap providers by rewriting only this function. On a transient error — a
+    per-minute rate-limit or the model being momentarily overloaded (503) — it
+    retries briefly, then tries a sibling model; if it still can't get through it
+    raises, and the calling agent falls back to its deterministic path.
     """
     client = _get_client()
     contents = [prompt]
     if image is not None:
         contents.append(image)  # google-genai accepts PIL.Image objects directly
-    for attempt in range(rate_limit_retries + 1):
-        try:
-            resp = client.models.generate_content(model=_MODEL_NAME, contents=contents)
-            return resp.text
-        except Exception as exc:  # noqa: BLE001
-            if _is_rate_limit(exc) and attempt < rate_limit_retries:
-                time.sleep(_retry_delay_seconds(exc))
-                continue
-            raise
+
+    # Try the primary model, then a sibling if one is configured and different.
+    # A real (non-transient) error raises straight away — only a transient one
+    # advances to the fallback model, so we never paper over a genuine bug.
+    models = [_MODEL_NAME]
+    if _FALLBACK_MODEL and _FALLBACK_MODEL != _MODEL_NAME:
+        models.append(_FALLBACK_MODEL)
+
+    last_exc = None
+    for model in models:
+        for attempt in range(rate_limit_retries + 1):
+            try:
+                resp = client.models.generate_content(model=model, contents=contents)
+                return resp.text
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if not _is_transient(exc):
+                    raise
+                # A per-minute rate limit clears with a short wait → retry the
+                # SAME model. An overload (503) won't clear that fast → don't
+                # stall, fall straight through to the sibling model instead.
+                if _is_rate_limit(exc) and attempt < rate_limit_retries:
+                    time.sleep(_retry_delay_seconds(exc))
+                    continue
+                break  # overloaded, or out of rate-limit retries → next model
+    raise last_exc
 
 
 _STT_PROVIDER = os.getenv("STT_PROVIDER", "gemini").lower()
