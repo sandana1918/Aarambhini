@@ -5,6 +5,7 @@ router persists its output and enforces approval-before-publish + an audit trail
 """
 import io
 import json
+import os
 import uuid
 import asyncio
 import threading
@@ -21,6 +22,10 @@ from ..db import get_db, LISTINGS, AUDIT_LOG
 from ..models import ApprovalDecision, AttributeAnswer, ClarificationAnswers, ReturnReport
 
 router = APIRouter(prefix="/listings", tags=["listings"])
+
+# Keep the shelf endpoint lightweight by default: listing rows are tiny, but
+# decoding stored phone photos into embedded thumbnails is optional work.
+LISTING_THUMBNAILS = os.getenv("LISTING_THUMBNAILS", "").lower() in {"1", "true", "yes"}
 
 
 def _out(doc: dict) -> dict:
@@ -447,16 +452,12 @@ async def my_listings(seller_id: str = Depends(current_seller)):
     )
     docs = await cursor.to_list(length=100)
 
-    # Thumbnails hit GridFS per listing; build them off the event loop, but cap
-    # how many decode at once — loading every image concurrently is a memory
-    # spike that would OOM a small instance for a seller with many listings.
-    sem = asyncio.Semaphore(4)
-
-    async def _thumb(ref):
-        async with sem:
-            return await asyncio.to_thread(_thumb_data_uri, ref)
-
-    thumbs = await asyncio.gather(*[_thumb(d.get("image_ref")) for d in docs])
+    # Thumbnails hit GridFS and decode images. Keep the default shelf response
+    # focused on listing metadata; enable previews only when needed.
+    thumbs = [None] * len(docs)
+    if LISTING_THUMBNAILS:
+        # Decode one at a time: slower, but avoids the memory cliff.
+        thumbs = [await asyncio.to_thread(_thumb_data_uri, d.get("image_ref")) for d in docs]
 
     items = []
     for d, thumb in zip(docs, thumbs):

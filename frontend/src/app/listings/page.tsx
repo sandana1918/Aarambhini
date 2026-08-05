@@ -168,20 +168,6 @@ export default function ListingsPage() {
               const resumable = l.status === 'ready_for_approval' || l.status === 'needs_clarification';
               return (
                 <li key={l.id} className="card flex items-center gap-4 p-4">
-                  {/* Thumbnail (embedded data URI) or a placeholder. */}
-                  {l.thumb ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={l.thumb}
-                      alt=""
-                      className="h-16 w-16 shrink-0 rounded-xl object-cover"
-                    />
-                  ) : (
-                    <span className="grid h-16 w-16 shrink-0 place-items-center rounded-xl bg-canvas text-muted">
-                      <Icon name="camera" size={20} />
-                    </span>
-                  )}
-
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span
