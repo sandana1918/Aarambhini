@@ -518,6 +518,35 @@ async def approve_listing(
     if not thread_id:
         raise HTTPException(status_code=409, detail="This listing has no resumable graph thread.")
 
+    # The duplicate-photo verdict from intake can go stale while this listing
+    # waits for approval. Re-check the claimed published-photo hashes at the
+    # final gate so another seller who published first blocks this draft from
+    # going live afterward.
+    if decision.approved:
+        ph = (doc.get("authenticity") or {}).get("phash")
+        if ph:
+            claim = await asyncio.to_thread(
+                graph_store.check_phash_claim, ph, seller_id, exclude_listing_id=oid
+            )
+            if claim.get("cross_seller"):
+                blocked_reason = (
+                    "This photo was already published by another seller while "
+                    "this listing was waiting. Please upload your own photo "
+                    "and create a fresh listing."
+                )
+                # Take it out of the approval queue rather than leaving it paused
+                # forever: it can never go live now, so it should read as
+                # 'needs a new photo', not sit as ready_for_approval in limbo.
+                await db[LISTINGS].update_one(
+                    {"_id": oid},
+                    {"$set": {
+                        "status": "needs_retake",
+                        "reason": blocked_reason,
+                        "updated_at": datetime.now(timezone.utc),
+                    }},
+                )
+                raise HTTPException(status_code=409, detail=blocked_reason)
+
     decision_payload = {
         "approved": decision.approved,
         "notes": decision.notes,

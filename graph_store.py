@@ -154,13 +154,37 @@ def check_fingerprint(image, seller_id, image_ref=None, threshold: int = 6) -> d
 
     Returns {phash, duplicate, cross_seller, duplicate_of_seller}.
     """
-    col = _get_client()[_DB_NAME]["image_fingerprints"]
     ph = phash(image)
+    return check_phash_claim(ph, seller_id, threshold=threshold)
+
+
+def check_phash_claim(ph, seller_id, threshold: int = 6, exclude_listing_id=None) -> dict:
+    """Look up whether a stored perceptual hash is already claimed.
+
+    Used again at approval time because a draft may sit for a while: another
+    seller can legitimately publish the same photo first, and the stale intake
+    verdict must not be trusted once this listing is about to go live.
+    """
+    col = _get_client()[_DB_NAME]["image_fingerprints"]
+    ph = (ph or "").strip().lower()
+    if not ph:
+        return {
+            "phash": ph,
+            "duplicate": False,
+            "cross_seller": False,
+            "duplicate_of_seller": None,
+        }
 
     dup = None
     # Prototype-scale linear scan; for production, bucket by hash prefix (LSH).
-    for fp in col.find({}, {"phash": 1, "seller_id": 1, "image_ref": 1}).limit(5000):
-        if fp.get("phash") and _hamming(ph, fp["phash"]) <= threshold:
+    for fp in col.find({}, {"phash": 1, "seller_id": 1, "image_ref": 1, "listing_id": 1}).limit(5000):
+        if exclude_listing_id and str(fp.get("listing_id")) == str(exclude_listing_id):
+            continue
+        try:
+            close = fp.get("phash") and _hamming(ph, fp["phash"]) <= threshold
+        except Exception:  # noqa: BLE001 - ignore malformed old rows
+            close = False
+        if close:
             dup = fp
             break
 
