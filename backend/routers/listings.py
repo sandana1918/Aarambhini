@@ -456,6 +456,18 @@ async def approve_listing(
     ]
 
     await db[LISTINGS].update_one({"_id": oid}, {"$set": update})
+
+    # Claim the photo's fingerprint ONLY now that it's actually published — this is
+    # what makes a genuinely stolen photo detectable later, while an unapproved
+    # draft never blocks anyone. Nothing is stored on a rejection.
+    if new_status == "published":
+        ph = (doc.get("authenticity") or {}).get("phash")
+        if ph:
+            await asyncio.to_thread(
+                graph_store.store_fingerprint, ph, doc.get("seller_id"),
+                doc.get("image_ref"), oid,
+            )
+
     await db[AUDIT_LOG].insert_one({
         # The verified caller, not the listing's stored owner. Those are now
         # always the same seller (require_listing_owner ran above), but the

@@ -32,7 +32,7 @@ def test_identical_image_hashes_to_zero_distance():
 def test_resized_copy_of_the_same_photo_stays_within_threshold():
     img = _checker()
     resized = img.resize((128, 128))
-    # check_and_store_fingerprint's default threshold is 6 — a resize (what a
+    # check_fingerprint's default threshold is 6 — a resize (what a
     # seller re-uploading her own photo would produce) must stay under it.
     assert _hamming(phash(img), phash(resized)) <= 6
 

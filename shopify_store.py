@@ -37,6 +37,38 @@ def is_configured() -> bool:
     return bool(domain and token)
 
 
+_currency_cache = None
+
+
+def shop_currency():
+    """The store's currency code (e.g. 'INR', 'USD'), cached. None if unknown.
+
+    Shopify shows a variant's price in the STORE currency — the product API can't
+    set it per product. So a price of 294 shows as $294 on a USD store and ₹294 on
+    an INR store. This lets the app detect a mismatch instead of shipping it silently.
+    To show rupees: Shopify admin → Settings → Store details → Store currency → INR.
+    """
+    global _currency_cache
+    if _currency_cache is not None:
+        return _currency_cache or None
+    domain, token, api_version = _config()
+    if not (domain and token):
+        return None
+    try:
+        import requests
+
+        resp = requests.get(
+            f"https://{domain}/admin/api/{api_version}/shop.json",
+            headers={"X-Shopify-Access-Token": token},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        _currency_cache = (resp.json().get("shop") or {}).get("currency") or ""
+    except Exception:  # noqa: BLE001 - a currency read must never block publishing
+        _currency_cache = ""
+    return _currency_cache or None
+
+
 def storefront_password():
     """The dev-store's public password, if set, so the UI can show it to a
     self-serve demo viewer. A dev store can't be made fully public (Shopify
@@ -126,11 +158,21 @@ def create_product(
     resp.raise_for_status()
     p = resp.json()["product"]
     handle = p.get("handle")
-    return {
+    currency = shop_currency()
+    out = {
         "id": p["id"],
         # The public product page. On a fresh dev store this may sit behind a
         # storefront password (Online Store → Preferences) until it's removed.
         "storefront_url": f"https://{domain}/products/{handle}" if handle else None,
         # Always viewable by her, since she's logged into the admin.
         "admin_url": f"https://{domain}/admin/products/{p['id']}",
+        "currency": currency,
     }
+    # The price is in rupees; if the store isn't INR, Shopify will render the
+    # wrong symbol. Surface it rather than shipping it silently.
+    if currency and currency != "INR":
+        out["currency_warning"] = (
+            f"Store currency is {currency}, so ₹{int(price)} shows as a {currency} amount. "
+            "Set it to INR in Shopify → Settings → Store details → Store currency."
+        )
+    return out

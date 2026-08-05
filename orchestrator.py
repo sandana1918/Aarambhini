@@ -105,7 +105,9 @@ def _authenticity(image, suno, state) -> dict:
 
     fp = {"phash": None, "duplicate": False, "cross_seller": False}
     try:
-        fp = graph_store.check_and_store_fingerprint(
+        # Check only against ALREADY-PUBLISHED photos. The fingerprint is claimed
+        # at publish time, so an unapproved draft never blocks another seller.
+        fp = graph_store.check_fingerprint(
             image, state.get("seller_id"), state.get("image_ref")
         )
     except Exception:  # noqa: BLE001 - fingerprinting must never crash intake

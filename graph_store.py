@@ -144,14 +144,16 @@ def _hamming(a: str, b: str) -> int:
     return bin(int(a, 16) ^ int(b, 16)).count("1")
 
 
-def check_and_store_fingerprint(image, seller_id, image_ref, threshold: int = 6) -> dict:
-    """Fingerprint a photo, look for a near-duplicate already in the system, and
-    store it. A match under a DIFFERENT seller is the strong 'stolen photo' signal.
+def check_fingerprint(image, seller_id, image_ref=None, threshold: int = 6) -> dict:
+    """Fingerprint a photo and look for a near-duplicate ALREADY PUBLISHED.
+
+    Checking only — it does NOT store. A photo becomes "claimed" only when its
+    listing is actually published (see store_fingerprint), so an unapproved draft
+    can never block another seller. A match under a DIFFERENT seller is the strong
+    'stolen photo' signal.
 
     Returns {phash, duplicate, cross_seller, duplicate_of_seller}.
     """
-    from datetime import datetime, timezone
-
     col = _get_client()[_DB_NAME]["image_fingerprints"]
     ph = phash(image)
 
@@ -162,13 +164,6 @@ def check_and_store_fingerprint(image, seller_id, image_ref, threshold: int = 6)
             dup = fp
             break
 
-    col.insert_one({
-        "phash": ph,
-        "seller_id": seller_id,
-        "image_ref": image_ref,
-        "created_at": datetime.now(timezone.utc),
-    })
-
     cross_seller = bool(
         dup and seller_id and dup.get("seller_id") and str(dup["seller_id"]) != str(seller_id)
     )
@@ -178,6 +173,26 @@ def check_and_store_fingerprint(image, seller_id, image_ref, threshold: int = 6)
         "cross_seller": cross_seller,
         "duplicate_of_seller": str(dup["seller_id"]) if dup and dup.get("seller_id") else None,
     }
+
+
+def store_fingerprint(ph, seller_id, image_ref=None, listing_id=None):
+    """Claim a photo's fingerprint — called ONLY when a listing is published.
+
+    Idempotent per (phash, seller): a re-published or re-run listing won't pile up
+    duplicate rows. Nothing is stored for drafts, rejected, or in-progress runs.
+    """
+    if not ph:
+        return
+    from datetime import datetime, timezone
+
+    col = _get_client()[_DB_NAME]["image_fingerprints"]
+    col.update_one(
+        {"phash": ph, "seller_id": seller_id},
+        {"$set": {"image_ref": image_ref, "listing_id": listing_id},
+         "$setOnInsert": {"phash": ph, "seller_id": seller_id,
+                          "created_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
 
 
 # ------------------------------------------------- returns feedback (Wapsi learns)

@@ -56,7 +56,7 @@ def no_real_model_or_database(monkeypatch):
         monkeypatch.setattr(mod, "llm_json", _model_unavailable)
     monkeypatch.setattr(graph_store, "load_image", lambda ref: _good_photo())
     monkeypatch.setattr(
-        graph_store, "check_and_store_fingerprint",
+        graph_store, "check_fingerprint",
         lambda *a, **k: {"phash": None, "duplicate": False, "cross_seller": False},
     )
     monkeypatch.setattr(graph_store, "return_stats", lambda category: None)
