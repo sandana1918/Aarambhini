@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Header } from '@/components/Chrome';
 import { AgentTimeline } from '@/components/AgentTimeline';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
@@ -156,7 +156,7 @@ function detailTabs(
   ];
 }
 
-export default function SellPage() {
+function SellPageInner() {
   const [voiceText, setVoiceText] = useState(HINDI_EXAMPLE);
   const [margin, setMargin] = useState(20);
   const [photo, setPhoto] = useState<File | null>(null);
@@ -188,10 +188,19 @@ export default function SellPage() {
   const [clarifying, setClarifying] = useState(false);
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const router = useRouter();
+  // Reactive, unlike a one-time window.location read: when she clicks "Start
+  // selling" (→ /sell) while a saved listing is open (/sell?id=…), this updates
+  // and the hydration effect below clears back to the blank create form.
+  const searchParams = useSearchParams();
+  const urlId = searchParams.get('id');
   const [session, setSession] = useState<Session | null>(null);
   // True while re-opening an existing listing (?id=…) from "My listings" — she
   // sees a loader, not the blank create form, until its review is on screen.
   const [hydrating, setHydrating] = useState(false);
+  // The listing id currently loaded from ?id=. Kept so we only reset when
+  // LEAVING a hydrated listing — never wiping a fresh run's result (which has
+  // no id in the URL).
+  const [hydratedId, setHydratedId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // A stored token can be expired, revoked, or signed with a restarted dev
@@ -208,30 +217,45 @@ export default function SellPage() {
         return;
       }
       setSession(stored);
-
-      // Re-opening a saved listing from "My listings": load it straight into the
-      // same review UI a fresh run produces, so the whole approve/publish flow is
-      // reused rather than rebuilt. Read the id off the URL directly to avoid a
-      // Suspense-bound useSearchParams for one query param.
-      const id =
-        typeof window !== 'undefined'
-          ? new URLSearchParams(window.location.search).get('id')
-          : null;
-      if (!id) return;
-      setHydrating(true);
-      try {
-        const loaded = await getListing(id);
-        if (active) setResult(loaded);
-      } catch (e) {
-        if (active) setError(e instanceof Error ? e.message : 'Could not open that listing.');
-      } finally {
-        if (active) setHydrating(false);
-      }
     })();
     return () => {
       active = false;
     };
   }, [router]);
+
+  // Open (or close) a saved listing as the URL's ?id= changes. Re-opening from
+  // "My listings" loads it straight into the same review UI a fresh run
+  // produces, so the whole approve/publish flow is reused; navigating back to a
+  // plain /sell resets to the create form instead of leaving the old listing on
+  // screen (the bug this replaces).
+  useEffect(() => {
+    if (!session) return; // wait until the session check has passed
+    let active = true;
+    if (urlId) {
+      if (urlId === hydratedId) return; // already showing this listing
+      setHydrating(true);
+      (async () => {
+        try {
+          const loaded = await getListing(urlId);
+          if (active) {
+            setResult(loaded);
+            setHydratedId(urlId);
+          }
+        } catch (e) {
+          if (active) setError(e instanceof Error ? e.message : 'Could not open that listing.');
+        } finally {
+          if (active) setHydrating(false);
+        }
+      })();
+    } else if (hydratedId) {
+      // Left a hydrated listing (e.g. clicked "Start selling") → fresh form.
+      startOver();
+      setHydratedId(null);
+    }
+    return () => {
+      active = false;
+    };
+  }, [urlId, session, hydratedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ask once whether a store is connected, so the "Send to your store" button
   // only appears when it will actually work.
@@ -1120,5 +1144,27 @@ export default function SellPage() {
         </div>
       </main>
     </>
+  );
+}
+
+// useSearchParams must sit under a Suspense boundary (Next 16), or the route's
+// prerender deopts and the build errors. The fallback mirrors the in-page
+// "checking session" loader so there's no flash of the wrong thing.
+export default function SellPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-8">
+          <div className="card p-5">
+            <div className="flex items-center gap-3">
+              <span className="h-5 w-5 animate-spin rounded-full border-[3px] border-brand-100 border-t-brand" />
+              <p className="text-[13px] text-muted">Loading…</p>
+            </div>
+          </div>
+        </main>
+      }
+    >
+      <SellPageInner />
+    </Suspense>
   );
 }
